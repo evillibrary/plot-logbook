@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f7d4f">
+<title>Plot Logbook</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <main>
+    <section class="view" data-view="map">
+      <div id="map"></div>
+      <div class="map-top">
+        <button class="pill" id="sync-pill" title="Sync status"><span class="dot" id="sync-dot"></span><span id="sync-text">offline</span></button>
+        <span class="spacer"></span>
+        <button class="pill icon" id="btn-locate" title="Where am I">◎</button>
+        <button class="pill icon" id="btn-layers" title="Layers">≡</button>
+      </div>
+      <div class="map-bottom">
+        <div class="jobs-strip" id="jobs-strip" hidden></div>
+        <button class="fab" id="btn-add" title="Log something here">+</button>
+      </div>
+    </section>
+    <section class="view" data-view="jobs" hidden><div id="jobs-view"></div></section>
+    <section class="view" data-view="water" hidden><div id="water-view"></div></section>
+    <section class="view" data-view="photos" hidden><div id="photos-view"></div></section>
+    <section class="view" data-view="more" hidden><div id="more-view"></div></section>
+    <div class="sheet layers" id="layers-sheet">
+        <div class="grip"></div><button class="close" data-close>×</button>
+        <h2>Layers</h2>
+        <label><input type="checkbox" data-layer="ortho"> Ortho imagery <input type="range" id="ortho-opacity" min="0" max="1" step="0.05" value="0.85"></label>
+        <label><input type="checkbox" data-layer="fences" checked> Fences (working boundary)</label>
+        <label><input type="checkbox" data-layer="csg"> Cadastral polygon (CSG)</label>
+        <label><input type="checkbox" data-layer="sg"> Survey diagram + river-middle line</label>
+        <label><input type="checkbox" data-layer="photos"> Photo positions</label>
+        <label><input type="checkbox" data-layer="context" checked> Neighbouring parcels and streets</label>
+        <label><input type="checkbox" data-layer="confidence"> Colour by confidence</label>
+        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+      </div>
+    <div class="sheet" id="feature-sheet">
+        <div class="grip"></div><button class="close" data-close>×</button>
+        <div id="feature-body"></div>
+      </div>
+  </main>
+  <nav class="tabs">
+    <button data-tab="map" class="active"><span class="ico">🗺</span>Map</button>
+    <button data-tab="jobs"><span class="ico">☑</span>Jobs</button>
+    <button data-tab="water"><span class="ico">💧</span>Water</button>
+    <button data-tab="photos"><span class="ico">📷</span>Photos</button>
+    <button data-tab="more"><span class="ico">⋯</span>More</button>
+  </nav>
+</div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/fflate.js"></script>
+<script src="vendor/exifr.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

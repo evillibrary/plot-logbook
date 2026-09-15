@@ -25,7 +25,8 @@ function resize(img, maxEdge, cover = false) {
 // Turn a File from the camera/gallery into {id, file, thumb, taken, gps, blob, thumbBlob}.
 export async function prepare(file) {
   let meta = {};
-  try { meta = (await exifr.parse(file, { gps: true, pick: ["DateTimeOriginal", "GPSLatitude", "GPSLongitude", "GPSHDOP", "Orientation"] })) ?? {}; } catch {}
+  try { meta = (await exifr.parse(file, ["DateTimeOriginal"])) ?? {}; } catch {}
+  try { const g = await exifr.gps(file); if (g && Number.isFinite(g.latitude)) Object.assign(meta, g); } catch {}
   const img = await loadImage(file);           // browsers apply EXIF orientation when decoding (image-orientation: from-image)
   const [blob, thumbBlob] = await Promise.all([resize(img, MAX_EDGE), resize(img, THUMB, true)]);
   const taken = meta.DateTimeOriginal instanceof Date ? localIso(meta.DateTimeOriginal) : localIso(new Date(file.lastModified || Date.now()));

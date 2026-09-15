@@ -12,7 +12,7 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -90,7 +90,8 @@ const app = {
   },
 
   async sync(manual = false) {
-    if (!this.source || this.syncing) return;
+    if (!this.source) return;
+    if (this.syncing) { this._syncAgain = true; return; }
     if (!navigator.onLine) { this.setSyncPill("pending", "offline"); return; }
     this.syncing = true;
     const status = m => this.setSyncPill("pending", m);
@@ -107,7 +108,10 @@ const app = {
       this.setSyncPill("err", "sync failed");
       if (manual) toast(`sync failed: ${e.message}`, 5000);
       console.error(e);
-    } finally { this.syncing = false; this.updateSyncSummary(); }
+    } finally {
+      this.syncing = false; this.updateSyncSummary();
+      if (this._syncAgain) { this._syncAgain = false; this.sync(); }
+    }
   },
   setSyncPill(cls, text) { $("sync-dot").className = `dot ${cls}`; $("sync-text").textContent = text; },
   async updateSyncSummary() {

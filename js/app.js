@@ -6,13 +6,13 @@ import { buildMap, toXY } from "./map.js";
 import { installTileLayer, tileManifest } from "./tiles.js";
 import * as events from "./events.js";
 import * as photos from "./photos.js";
-import { h, clear, toast } from "./ui/dom.js";
+import { h, clear, toast, today } from "./ui/dom.js";
 import { renderFeature } from "./ui/sheet.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -127,7 +127,7 @@ const app = {
       const f = this.state.features.get(this.selected.id); if (f) renderFeature(this, f);
     }
     if (this.mapApi && this.tab === "map" && this._needsMap) { this._needsMap = false; this.buildMap(); }
-    const t = new Date().toISOString().slice(0, 10);
+    const t = today();
     const due = [...(this.state?.jobs.values() ?? [])].filter(j => !j.done && j.due && j.due <= t).length;
     $("jobs-strip").hidden = !due; $("jobs-strip").textContent = `${due} job${due === 1 ? "" : "s"} due`;
   },
@@ -228,6 +228,8 @@ async function boot() {
     app.sync();
   }
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(console.warn);
+  // ask the browser not to evict our IndexedDB under storage pressure: unsynced field notes live there
+  navigator.storage?.persist?.().then(ok => { if (!ok) console.warn("persistent storage not granted"); });
 }
 
 window.app = app;

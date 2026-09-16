@@ -69,7 +69,8 @@ export function addDuration(dateStr, dur) {
   const d = new Date(dateStr + "T00:00:00");
   d.setFullYear(d.getFullYear() + (+m[1] || 0)); d.setMonth(d.getMonth() + (+m[2] || 0));
   d.setDate(d.getDate() + (+m[3] || 0) * 7 + (+m[4] || 0));
-  return d.toISOString().slice(0, 10);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;      // local date, never via UTC
 }
 
 // --- sync with the data source ---

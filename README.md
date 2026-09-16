@@ -33,3 +33,5 @@ Serve the app and a data folder from one origin, e.g. from their common parent:
 `python -m http.server 8000`, then open
 `http://localhost:8000/<app>/index.html?source=http://localhost:8000/<data-folder>/data/&author=me`
 (read-only source; records stay on the device).
+
+Tests: `node --test` (state derivation from the event log).

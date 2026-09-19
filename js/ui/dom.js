@@ -37,4 +37,5 @@ export function toast(msg, ms = 2500) {
   if (!t) { t = h("div#toast", { style: { position: "fixed", left: "50%", bottom: "80px", transform: "translateX(-50%)", background: "#1e1f1a", color: "#fff", padding: "8px 14px", borderRadius: "10px", zIndex: 1000, fontSize: "14px", maxWidth: "90vw" } }); t.id = "toast"; document.body.append(t); }
   t.textContent = msg; t.hidden = false;
   clearTimeout(t._t); t._t = setTimeout(() => { t.hidden = true; }, ms);
+  return t;
 }

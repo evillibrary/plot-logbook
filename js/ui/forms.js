@@ -1,16 +1,18 @@
 // The logging forms. Each returns an element; on save it calls app.record(...) and app.done(form).
 import { h, field, today, toast } from "./dom.js";
 import * as photos from "../photos.js";
+import { CATEGORIES, CAT } from "../categories.js";
+import { describeGeom } from "../geo.js";
 
 const KINDS = [["note", "Note"], ["health", "Health / condition"], ["measure", "Measurement"], ["harvest", "Harvest"], ["work", "Work done"]];
-const TYPES = [["planting", "Planting"], ["tree", "Tree"], ["water", "Water"], ["structure", "Structure"], ["yard", "Yard object"], ["access", "Access"], ["vegetation", "Vegetation"], ["memorial", "Memorial"], ["history", "History"]];
 const REPEATS = [["", "once"], ["P1D", "daily"], ["P7D", "weekly"], ["P2W", "fortnightly"], ["P1M", "monthly"], ["P3M", "quarterly"], ["P1Y", "yearly"]];
 const select = (opts, value) => h("select", {}, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
 
-const featurePicker = (app, value) => {
-  const opts = [["", "— no feature —"], ...[...app.state.features.values()].filter(f => !f.retired && !["boundary", "beacon", "fence"].includes(f.type)).sort((a, b) => a.name.localeCompare(b.name)).map(f => [f.id, f.name])];
-  return select(opts, value ?? "");
-};
+export const liveFeatures = app => [...app.state.features.values()].filter(f => !f.deleted && !f.retired).sort((a, b) => a.name.localeCompare(b.name));
+const featurePicker = (app, value, filter = () => true) => select([["", "— no feature —"], ...liveFeatures(app).filter(filter).map(f => [f.id, `${f.name} (${CAT[f.type]?.name ?? f.type})`])], value ?? "");
+// category choices that suit a geometry kind: point / line / area / none
+const catsFor = kind => CATEGORIES.filter(c => kind === "none" ? c.geom === "none" : c.geom !== "none");
+const catSelect = (kind, value) => select(catsFor(kind).map(c => [c.id, c.name]), value ?? catsFor(kind).find(c => c.geom === kind)?.id ?? catsFor(kind)[0].id);
 
 // Pick photos from camera/gallery, prepare them, show thumbs. Returns {el, list()}
 function photoPicker(app) {
@@ -92,37 +94,62 @@ export function jobForm(app, feature, job) {
   return form;
 }
 
-const SOURCES = [["inlet", "Water inlet (meter)"], ["tank", "Tank level"], ["rain", "Rain gauge"], ["other", "Other"]];
-const UNITS = { inlet: "m3", tank: "%", rain: "mm", other: "" };
-export function waterForm(app) {
-  const src = select(SOURCES, "inlet"), value = h("input", { type: "number", step: "any", inputmode: "decimal", required: true });
-  const unit = h("input", { value: UNITS.inlet, size: 4 }), when = h("input", { type: "datetime-local", value: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16) });
+const UNITS = { water: "m3", rain: "mm", other: "" };
+export function waterForm(app, feature) {
+  const waterFeatures = liveFeatures(app).filter(f => f.type === "water");
+  const src = select([...waterFeatures.map(f => [f.id, f.name]), ["rain", "Rain gauge"], ["other", "Other"]], feature?.id ?? (waterFeatures[0]?.id ?? "rain"));
+  const value = h("input", { type: "number", step: "any", inputmode: "decimal", required: true });
+  const unitFor = () => UNITS[src.value === "rain" || src.value === "other" ? src.value : "water"];
+  const unit = h("input", { value: unitFor(), size: 4 });
+  const when = h("input", { type: "datetime-local", value: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 16) });
   const note = h("input", { placeholder: "Note (optional)" });
-  src.addEventListener("change", () => { unit.value = UNITS[src.value]; });
+  src.addEventListener("change", () => { unit.value = unitFor(); });
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
-    await app.record({ op: "water", source: src.value, value: +value.value, unit: unit.value.trim(), note: note.value.trim(), at: when.value });
-    toast("water logged"); app.done(form);
+    const isFeature = !["rain", "other"].includes(src.value);
+    await app.record({ op: "water", source: isFeature ? "feature" : src.value, feature: isFeature ? src.value : null, value: +value.value, unit: unit.value.trim(), note: note.value.trim(), at: when.value });
+    toast("reading logged"); app.done(form);
   } },
-    h("h2", "Water reading"), field("Source", src),
+    h("h2", feature ? `Reading: ${feature.name}` : "Water reading"), field("Source", src),
     h("div.row", field("Reading", value), field("Unit", unit)), field("When", when), field("Note", note),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Save"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }
 
-// New feature at a map position (xy in plot metres). ll = [lon, lat] for the KML export later.
-export function featureForm(app, xy, viaGps) {
-  const name = h("input", { placeholder: "e.g. Lemon tree", required: true }), type = select(TYPES, "planting");
-  const conf = select([["low", "low — phone GPS"], ["medium", "medium — checked against the map"], ["high", "high — exactly here"]], viaGps ? "low" : "medium");
-  const desc = h("textarea", { rows: 2, placeholder: "Planted when, variety, anything useful" });
+// New feature: geom is {type, xy} in plot metres (ll added here), or null for pets/livestock.
+export function featureForm(app, geom, opts = {}) {
+  const kind = !geom ? "none" : geom.type === "Point" ? "point" : geom.type === "LineString" ? "line" : "area";
+  const name = h("input", { placeholder: kind === "none" ? "e.g. Bella" : kind === "line" ? "e.g. North paddock fence" : kind === "area" ? "e.g. Top paddock" : "e.g. Lemon tree", required: true });
+  const type = catSelect(kind, opts.type);
+  const conf = select([["low", "low — phone GPS"], ["medium", "medium — checked against the map"], ["high", "high — exactly here"]], opts.viaGps ? "low" : "medium");
+  const desc = h("textarea", { rows: 2, placeholder: kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
-    const lonlat = app.unproject(xy);
-    await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: conf.value, source: viaGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: [+lonlat[0].toFixed(7), +lonlat[1].toFixed(7)] } });
-    toast("feature added — it will go to Google Earth with the next export"); app.done(form);
+    let g = null;
+    if (geom) {
+      const toLL = xy => app.unproject(xy).map(v => +v.toFixed(7));
+      g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.xy.map(toLL) };
+    }
+    await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : opts.viaGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g });
+    toast(`${name.value.trim()} added`); app.done(form);
   } },
-    h("h2", "New feature here"), h("p.note", `E ${xy[0].toFixed(1)}  N ${xy[1].toFixed(1)}${viaGps ? " (from GPS)" : ""}`),
-    field("Name", name), field("Type", type), field("Position confidence", conf), field("Description", desc),
+    h("h2", kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
+    geom && h("p.note", `${describeGeom(geom)}${opts.viaGps ? " (from GPS)" : ""}`),
+    field("Name", name), field("Category", type), kind === "point" ? field("Position confidence", conf) : null, field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Add"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
+  return form;
+}
+
+export function editForm(app, f) {
+  const kind = !f.geom ? "none" : f.geom.type === "Point" ? "point" : f.geom.type === "LineString" ? "line" : "area";
+  const name = h("input", { value: f.name, required: true }), type = catSelect(kind, f.type);
+  const desc = h("textarea", { rows: 3, value: f.description ?? "" });
+  const form = h("form", { onsubmit: async e => {
+    e.preventDefault();
+    await app.record({ op: "feature.edit", feature: f.id, changes: { name: name.value.trim(), type: type.value, description: desc.value.trim() } });
+    toast("saved"); app.done(form);
+  } },
+    h("h2", `Edit ${f.name}`), field("Name", name), field("Category", type), field("Description", desc),
+    h("div.row", h("button.btn.primary", { type: "submit" }, "Save"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }

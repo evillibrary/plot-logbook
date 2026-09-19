@@ -7,12 +7,13 @@ import { installTileLayer, tileManifest } from "./tiles.js";
 import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today } from "./ui/dom.js";
-import { renderFeature } from "./ui/sheet.js";
+import { renderFeature, renderList } from "./ui/sheet.js";
+import { CATEGORIES, iconSvg } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.2.0";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -66,11 +67,11 @@ const app = {
     const grid = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired) };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
     this.mapApi = buildMap($("map"), live, grid, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       onStatus: msg => toast(msg),
-      onLocate: (xy, acc) => { this.lastGps = { xy, acc, ll: this.unproject(xy) }; },
+      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "draw") this.refreshDrawBar(); },
     });
     if (im) { const man = await tileManifest(im.id); if (man) this.mapApi.setImagery(im.id, man); }
     this.mapApi.map.on("click", e => this.onMapClick(toXY(e.latlng)));
@@ -150,7 +151,7 @@ const app = {
     clear($("feature-body")).append(form);
     $("layers-sheet").classList.remove("open");
     $("feature-sheet").classList.add("open");
-    form.querySelector?.("input:not([type=file]), textarea, select")?.focus();
+    setTimeout(() => form.querySelector?.("input:not([type=file]), textarea, select")?.focus({ preventScroll: true }), 220);
   },
   done() {
     this._formOpen = false;
@@ -167,31 +168,81 @@ const app = {
     this.openSheet(f);
   },
 
-  // pick a point on the map: for moving a feature or adding one
+  // --- delete with a way back ---
+  async deleteFeature(f, attached) {
+    if (!confirm(`Delete ${f.name}?\n\nAttached: ${attached}. Those records stay in the log but lose their link (photos go to "Unlinked"). Retire instead if it died or was removed.\n\nYou can undo for 10 seconds, or restore later from More.`)) return;
+    await this.record({ op: "feature.delete", feature: f.id });
+    this.closeSheet();
+    const t = toast(`${f.name} deleted`, 10000);
+    t.append(h("button", { style: { marginLeft: "12px", background: "#fff", color: "#1e1f1a", border: 0, borderRadius: "6px", padding: "4px 10px" }, onclick: async () => { await this.record({ op: "feature.undelete", feature: f.id }); t.hidden = true; toast(`${f.name} restored`); } }, "Undo"));
+  },
+
+  // --- picking and drawing on the map ---
   startMove(f) { this.pickMode = { kind: "move", feature: f }; this.closeSheet(); toast(`Tap the new position for ${f.name}`, 4000); $("map").style.cursor = "crosshair"; },
   startAdd() { this.pickMode = { kind: "add" }; this.closeSheet(); toast("Tap the map where the new feature is", 4000); $("map").style.cursor = "crosshair"; },
-  async onMapClick(xy) {
-    if (!this.pickMode) { this.closeSheet(); return; }
-    const mode = this.pickMode; this.pickMode = null; $("map").style.cursor = "";
-    if (mode.kind === "move") {
-      const f = mode.feature;
-      if (f.geom.type !== "Point") return toast("only point features can be moved in the app");
-      await this.record({ op: "feature.move", feature: f.id, geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: this.unproject(xy).map(v => +v.toFixed(7)) }, confidence: "medium" });
-      this._needsMap = true; this.render(); toast(`${f.name} moved`);
+  startDraw(type, opts = {}) {                       // type: "line" | "area"
+    this.closeSheet();
+    this.pickMode = { kind: "draw", type, ...opts };
+    this.mapApi.draw.start(type);
+    $("draw-title").textContent = opts.feature ? `Redrawing ${opts.feature.name}` : type === "line" ? "New line" : "New area";
+    $("draw-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    $("map").style.cursor = "crosshair";
+    this.refreshDrawBar();
+  },
+  startRedraw(f) { this.startDraw(f.geom.type === "Polygon" ? "area" : "line", { feature: f }); },
+  refreshDrawBar() {
+    const d = this.mapApi.draw, gps = this.lastGps;
+    $("draw-summary").textContent = `· ${d.count()} point${d.count() === 1 ? "" : "s"} · ${d.summary()}`;
+    $("draw-gps").disabled = !gps; $("draw-gps").title = gps ? `±${Math.round(gps.acc)} m` : "turn on ◎ first";
+    $("draw-undo").disabled = !d.count();
+    $("draw-finish").disabled = d.count() < (this.pickMode?.type === "area" ? 3 : 2);
+  },
+  endDraw() {
+    this.mapApi.draw.cancel(); this.pickMode = null;
+    $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
+    this.render();
+  },
+  async finishDraw() {
+    const mode = this.pickMode, geom = this.mapApi.draw.finish();
+    if (!geom) return;
+    if (mode.feature) {
+      const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
+      await this.record({ op: "feature.move", feature: mode.feature.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence: "medium" });
+      this.endDraw(); toast(`${mode.feature.name} redrawn`);
     } else {
-      this.showForm(featureForm(this, xy, false));
+      const type = mode.type;
+      this.endDraw();
+      this.showForm(featureForm(this, geom, { type: type === "line" ? "fences" : "paddocks" }));
     }
   },
+  async onMapClick(xy) {
+    if (!this.pickMode) { this.closeSheet(); return; }
+    const mode = this.pickMode;
+    if (mode.kind === "draw") { this.mapApi.draw.add(xy); this.refreshDrawBar(); return; }
+    this.pickMode = null; $("map").style.cursor = "";
+    if (mode.kind === "move") {
+      const f = mode.feature;
+      await this.record({ op: "feature.move", feature: f.id, geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: this.unproject(xy).map(v => +v.toFixed(7)) }, confidence: "medium" });
+      this.render(); toast(`${f.name} moved`);
+    } else {
+      this.showForm(featureForm(this, { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)] }));
+    }
+  },
+  showList() { this.showForm(renderList(this)); },
   addMenu() {
     const gps = this.lastGps;
     const item = (label, fn) => h("button.btn", { style: { display: "block", width: "100%", textAlign: "left", marginBottom: "8px" }, onclick: fn }, label);
     this.showForm(h("div", h("h2", "Log"),
-      item("✎ Note", () => this.showForm(observeForm(this, null))),
-      item("📷 Photo", () => this.showForm(photoForm(this, null))),
-      item("☑ Job", () => this.showForm(jobForm(this, null))),
-      item("💧 Water reading", () => this.showForm(waterForm(this))),
-      item("＋ New feature — tap its place on the map", () => this.startAdd()),
-      gps && item(`＋ New feature at my GPS position (±${Math.round(gps.acc)} m)`, () => this.showForm(featureForm(this, gps.xy, true))),
+      item("\u270e Note", () => this.showForm(observeForm(this, null))),
+      item("\ud83d\udcf7 Photo", () => this.showForm(photoForm(this, null))),
+      item("\u2611 Job", () => this.showForm(jobForm(this, null))),
+      item("\ud83d\udca7 Water reading", () => this.showForm(waterForm(this))),
+      h("h2", { style: { marginTop: "14px" } }, "Add to the map"),
+      item("\ud83d\udccd Point \u2014 tap its place on the map", () => this.startAdd()),
+      gps && item(`\ud83d\udccd Point at my GPS position (\u00b1${Math.round(gps.acc)} m)`, () => this.showForm(featureForm(this, { type: "Point", xy: gps.xy.map(v => +v.toFixed(2)) }, { viaGps: true }))),
+      item("\u2571 Line \u2014 a fence, a pipe, a path", () => this.startDraw("line")),
+      item("\u2b20 Area \u2014 a paddock, a bed, a stand", () => this.startDraw("area")),
+      item("\ud83d\udc3e Pet or animal (no position)", () => this.showForm(featureForm(this, null))),
     ));
   },
 };
@@ -208,9 +259,21 @@ async function boot() {
   $("btn-layers").addEventListener("click", () => { $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.toggle("open"); });
   $("btn-locate").addEventListener("click", () => app.mapApi?.locate((lon, lat) => app.proj.forward(lon, lat)));
   $("btn-add").addEventListener("click", () => app.addMenu());
+  $("btn-list").addEventListener("click", () => app.plot && app.showList());
+  $("draw-gps").addEventListener("click", () => { if (app.lastGps) { app.mapApi.draw.add(app.lastGps.xy.map(v => +v.toFixed(2))); app.refreshDrawBar(); } });
+  $("draw-undo").addEventListener("click", () => { app.mapApi.draw.undo(); app.refreshDrawBar(); });
+  $("draw-finish").addEventListener("click", () => app.finishDraw());
+  $("draw-cancel").addEventListener("click", () => app.endDraw());
+  // one toggle per category under "Features"
+  const catBox = $("layer-categories");
+  for (const c of CATEGORIES.filter(c => c.geom !== "none")) {
+    const cb = h("input", { type: "checkbox", checked: true, dataset: { layer: c.id } });
+    const sw = h("span.swatch"); sw.innerHTML = iconSvg(c, 22);
+    catBox.append(h("label", cb, sw, c.name));
+  }
+  for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) cb.addEventListener("change", () => app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked));
   $("sync-pill").addEventListener("click", () => app.source ? app.sync(true) : app.showTab("more"));
   $("jobs-strip").addEventListener("click", () => app.showTab("jobs"));
-  for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) cb.addEventListener("change", () => app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked));
   $("ortho-opacity").addEventListener("input", e => app.mapApi?.overlays.ortho.opacity(+e.target.value));
   window.addEventListener("online", () => app.sync());
   window.addEventListener("offline", () => app.setSyncPill("pending", "offline"));

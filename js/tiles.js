@@ -34,7 +34,7 @@ export const IdbTileLayer = L.GridLayer.extend({
     this.layerId = layerId;
     this.manifest = manifest;
     L.GridLayer.prototype.initialize.call(this, L.extend({
-      tileSize: manifest.tileSize, minNativeZoom: 0, maxNativeZoom: Math.max(...Object.keys(manifest.zooms).map(Number)),
+      tileSize: manifest.tileSize, minZoom: -3, minNativeZoom: 0, maxNativeZoom: Math.max(...Object.keys(manifest.zooms).map(Number)),
       keepBuffer: 4, updateWhenZooming: false,
     }, options));
   },

@@ -1,6 +1,7 @@
 // Settings: who you are, where the plot's data lives, and the plot/imagery loaders.
 import { h, clear, field, toast } from "./dom.js";
 import { db } from "../db.js";
+import { catOf } from "../categories.js";
 
 export function renderMore(app) {
   const el = clear(document.getElementById("more-view"));
@@ -23,7 +24,7 @@ export function renderMore(app) {
     catch (e) { status.textContent = `not connected: ${e.message}`; }
   };
 
-  el.append(
+  el.append(...[
     h("h1", "Settings"),
     h("div.card", h("h3", "You"), field("Name", author), h("p.note", `This device: ${s.device ?? "(set after first save)"}`)),
     h("div.card", h("h3", "Data source (private GitHub repo)"),
@@ -39,10 +40,13 @@ export function renderMore(app) {
     h("div.card", h("h3", "Sync"),
       h("p.note", { id: "sync-summary" }, ""),
       h("div.row", h("button.btn.primary", { onclick: () => app.sync(true) }, "Sync now"))),
+    (() => { const del = [...app.state.features.values()].filter(f => f.deleted); return del.length ? h("div.card", h("h3", `Deleted features (${del.length})`),
+      ...del.map(f => h("div.row", { style: { justifyContent: "space-between", padding: "4px 0" } }, h("span", `${f.name} `, h("span.note", `${catOf(f).name} · ${f.deleted.slice(0, 10)} by ${f.deletedBy ?? ""}`)),
+        h("button.btn", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast(`${f.name} restored`); } }, "Restore")))) : null; })(),
     h("div.card", h("h3", "Danger zone"),
       h("p.note", "Records not yet synced would be lost."),
       h("button.btn.danger", { onclick: async () => { if (confirm("Clear everything stored on this device?")) { for (const st of ["kv", "tiles", "events", "photos"]) await db.clear(st); location.reload(); } } }, "Clear local data")),
     h("p.note", `Plot Logbook ${app.version}`),
-  );
+  ].filter(Boolean));
   app.updateSyncSummary();
 }

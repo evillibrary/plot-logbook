@@ -104,3 +104,41 @@ test("addDuration handles days, weeks, months, years", () => {
   assert.equal(addDuration("2026-09-10", "P1Y"), "2027-09-10");
   assert.equal(addDuration("2026-09-10", "bogus"), "2026-09-10");
 });
+
+test("delete hides, undelete restores; retire/unretire round-trips", () => {
+  const ev2 = (ts, op, rest) => ({ id: `01TESTX${ts.replace(/\D/g, "").slice(0, 19).padEnd(19, "0")}`, ts, by: "t", device: "d", op, ...rest });
+  const s = fold(plot, [
+    ev2("2026-09-10T10:00:00+02:00", "feature.delete", { feature: "K1" }),
+    ev2("2026-09-10T10:01:00+02:00", "feature.undelete", { feature: "K1" }),
+    ev2("2026-09-10T10:02:00+02:00", "feature.retire", { feature: "K2", note: "gone" }),
+    ev2("2026-09-10T10:03:00+02:00", "feature.unretire", { feature: "K2" }),
+    ev2("2026-09-10T10:04:00+02:00", "feature.delete", { feature: "K2" }),
+  ]);
+  assert.equal(s.features.get("K1").deleted, undefined);
+  assert.equal(s.features.get("K2").retired, undefined);
+  assert.equal(s.features.get("K2").deleted, "2026-09-10T10:04:00+02:00");
+});
+
+test("features without geometry (pets) and line/area features fold like any other", () => {
+  const s = fold(plot, [
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_pet", name: "Bella", type: "pets", geom: null }),
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_fence", name: "Middle", type: "fences", confidence: "medium", geom: { type: "LineString", xy: [[0, 0], [30, 0], [30, 40]], ll: [[23, -33], [23, -33], [23, -33]] } }),
+    ev("2026-09-11T10:00:00+02:00", "water", { source: "feature", feature: "K1", value: 12, unit: "m3" }),
+    ev("2026-09-11T10:00:00+02:00", "job.add", { job: "w", title: "Deworm", feature: "f_pet", due: "2026-10-01", repeat: "P3M" }),
+  ]);
+  assert.equal(s.features.get("f_pet").geom, null);
+  assert.equal(s.features.get("f_pet").confidence, "");
+  assert.equal(s.features.get("f_fence").geom.xy.length, 3);
+  assert.equal(s.byFeature.get("K1")[0].kind, "water");
+  assert.equal(s.byFeature.get("f_pet")[0].item.title, "Deworm");
+});
+
+test("geometry helpers: length, area, formatting", async () => {
+  const { lineLength, polygonArea, fmtLength, fmtArea } = await import("../js/geo.js");
+  assert.equal(lineLength([[0, 0], [30, 0], [30, 40]]), 70);
+  assert.equal(polygonArea([[0, 0], [100, 0], [100, 50], [0, 50], [0, 0]]), 5000);
+  assert.equal(polygonArea([[0, 0], [100, 0], [100, 50], [0, 50]]), 5000, "open ring counts the same");
+  assert.equal(fmtLength(70), "70 m");
+  assert.equal(fmtArea(5000), "5 000 m²");
+  assert.equal(fmtArea(12026), "1.20 ha (12 026 m²)");
+});

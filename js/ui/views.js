@@ -31,15 +31,19 @@ export function renderWater(app) {
   const el = clear(document.getElementById("water-view"));
   const rows = [...app.state.water].sort((a, b) => (b.at ?? b.ts).localeCompare(a.at ?? a.ts));
   el.append(h("h1", "Water"), h("div.row", h("button.btn.primary", { onclick: () => app.showForm(waterForm(app), el) }, "+ Reading")));
+  const key = r => r.feature ?? r.source;
+  const title = r => r.feature ? fname(app, r.feature) || "(deleted feature)" : r.source === "rain" ? "Rain gauge" : r.source.replace("_", " ");
   const bySource = new Map();
-  for (const r of rows) (bySource.get(r.source) ?? bySource.set(r.source, []).get(r.source)).push(r);
-  for (const [src, list] of bySource) {
+  for (const r of rows) (bySource.get(key(r)) ?? bySource.set(key(r), []).get(key(r))).push(r);
+  for (const [k, list] of bySource) {
     const latest = list[0], prev = list[1];
-    const delta = prev && latest.unit === "m3" ? ` (+${(latest.value - prev.value).toFixed(2)} since ${prev.at?.slice(0, 10) ?? prev.ts.slice(0, 10)})` : "";
-    el.append(h("div.card", h("h3", src.replace("_", " ")), h("div", `${latest.value} ${latest.unit}${delta}`), h("div.note", `${fmtWhen(latest.at ?? latest.ts)} · ${latest.by}${latest.note ? " · " + latest.note : ""}`), sparkline(list.slice(0, 30).reverse())));
+    const delta = prev && latest.unit === "m3" ? ` (+${(latest.value - prev.value).toFixed(2)} since ${(prev.at ?? prev.ts).slice(0, 10)})` : "";
+    const total = latest.unit === "mm" ? ` · ${list.reduce((a, r) => a + r.value, 0).toFixed(0)} mm logged` : "";
+    el.append(h("div.card", h("h3", title(latest)), h("div", `${latest.value} ${latest.unit}${delta}${total}`), h("div.note", `${fmtWhen(latest.at ?? latest.ts)} · ${latest.by}${latest.note ? " · " + latest.note : ""}`),
+      latest.feature && h("button.btn", { style: { marginTop: "6px" }, onclick: () => app.goTo(latest.feature) }, "📍 On map"), sparkline(list.slice(0, 30).reverse())));
   }
-  if (!rows.length) el.append(h("p.empty", "No readings yet."));
-  else el.append(h("h3", "All readings"), h("ul.timeline", ...rows.slice(0, 50).map(r => h("li", h("time", `${(r.at ?? r.ts).slice(0, 16).replace("T", " ")} · ${r.by}`), `${r.source.replace("_", " ")}: ${r.value} ${r.unit} ${r.note ?? ""}`))));
+  if (!rows.length) el.append(h("p.empty", "No readings yet. Tap a water feature on the map and press Reading, or + Reading here."));
+  else el.append(h("h3", "All readings"), h("ul.timeline", ...rows.slice(0, 50).map(r => h("li", h("time", `${(r.at ?? r.ts).slice(0, 16).replace("T", " ")} · ${r.by}`), `${title(r)}: ${r.value} ${r.unit} ${r.note ?? ""}`))));
 }
 
 // A small inline SVG of readings over time; enough to see a trend, no library.
@@ -56,11 +60,11 @@ function sparkline(list) {
 export function renderPhotos(app) {
   const el = clear(document.getElementById("photos-view"));
   const all = [...app.state.photos.values()].sort((a, b) => (b.taken ?? b.ts).localeCompare(a.taken ?? a.ts));
-  const filter = h("select", h("option", { value: "" }, "All features"), ...[...app.state.features.values()].filter(f => app.state.byFeature.get(f.id)?.some(e => e.kind === "photo")).map(f => h("option", { value: f.id }, f.name)));
+  const filter = h("select", h("option", { value: "" }, "All features"), h("option", { value: "unlinked" }, "Unlinked photos"), ...[...app.state.features.values()].filter(f => app.state.byFeature.get(f.id)?.some(e => e.kind === "photo")).sort((a, b) => a.name.localeCompare(b.name)).map(f => h("option", { value: f.id }, f.name)));
   const grid = h("div.photo-grid");
   const draw = () => {
     clear(grid);
-    const list = filter.value ? all.filter(p => p.feature === filter.value) : all;
+    const list = filter.value === "unlinked" ? all.filter(p => !p.feature || !app.state.features.has(p.feature) || app.state.features.get(p.feature).deleted) : filter.value ? all.filter(p => p.feature === filter.value) : all;
     let lastMonth = "";
     for (const p of list) {
       const m = (p.taken ?? p.ts).slice(0, 7);
@@ -87,6 +91,6 @@ export function photoViewer(app, p) {
     h("div.row", { style: { marginTop: "10px" } },
       p.feature && h("button.btn", { onclick: () => app.goTo(p.feature) }, "📍 On map"),
       h("button.btn", { onclick: () => { const c = prompt("Caption:", p.caption ?? ""); if (c !== null) app.record({ op: "photo.edit", photo: p.photo, changes: { caption: c } }).then(() => app.closeSheet()); } }, "✎ Caption"),
-      !p.feature && h("button.btn", { onclick: () => { const sel = h("select", ...[...app.state.features.values()].map(f => h("option", { value: f.id }, f.name))); app.showForm(h("form", { onsubmit: async e => { e.preventDefault(); await app.record({ op: "photo.edit", photo: p.photo, changes: { feature: sel.value } }); app.closeSheet(); } }, h("h2", "Link photo to"), sel, h("div.row", h("button.btn.primary", { type: "submit" }, "Link")))); } }, "Link to feature"),
+      h("button.btn", { onclick: () => { const sel = h("select", ...[...app.state.features.values()].filter(f => !f.deleted).sort((a, b) => a.name.localeCompare(b.name)).map(f => h("option", { value: f.id, selected: f.id === p.feature }, f.name))); app.showForm(h("form", { onsubmit: async e => { e.preventDefault(); await app.record({ op: "photo.edit", photo: p.photo, changes: { feature: sel.value } }); app.closeSheet(); } }, h("h2", "Link photo to"), sel, h("div.row", h("button.btn.primary", { type: "submit" }, "Link")))); } }, p.feature ? "Re-link" : "Link to feature"),
       h("button.btn", { onclick: () => app.closeSheet() }, "Close")));
 }

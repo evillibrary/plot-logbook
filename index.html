@@ -19,8 +19,19 @@
       <div class="map-top">
         <button class="pill" id="sync-pill" title="Sync status"><span class="dot" id="sync-dot"></span><span id="sync-text">offline</span></button>
         <span class="spacer"></span>
+        <button class="pill icon" id="btn-list" title="Find a feature">☰</button>
         <button class="pill icon" id="btn-locate" title="Where am I">◎</button>
         <button class="pill icon" id="btn-layers" title="Layers">≡</button>
+      </div>
+      <div class="draw-bar" id="draw-bar" hidden>
+        <div class="draw-info"><strong id="draw-title">Drawing</strong> <span id="draw-summary"></span></div>
+        <div class="row">
+          <button class="btn" id="draw-gps" title="Add a point at my GPS position">◎ Point at GPS</button>
+          <button class="btn" id="draw-undo">↶ Undo</button>
+          <button class="btn primary" id="draw-finish">Finish</button>
+          <button class="btn" id="draw-cancel">Cancel</button>
+        </div>
+        <div class="note">…or tap the map to add points</div>
       </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
@@ -32,17 +43,18 @@
     <section class="view" data-view="photos" hidden><div id="photos-view"></div></section>
     <section class="view" data-view="more" hidden><div id="more-view"></div></section>
     <div class="sheet layers" id="layers-sheet">
-        <div class="grip"></div><button class="close" data-close>×</button>
-        <h2>Layers</h2>
-        <label><input type="checkbox" data-layer="ortho"> Ortho imagery <input type="range" id="ortho-opacity" min="0" max="1" step="0.05" value="0.85"></label>
-        <label><input type="checkbox" data-layer="fences" checked> Fences (working boundary)</label>
-        <label><input type="checkbox" data-layer="csg"> Cadastral polygon (CSG)</label>
-        <label><input type="checkbox" data-layer="sg"> Survey diagram + river-middle line</label>
-        <label><input type="checkbox" data-layer="photos"> Photo positions</label>
-        <label><input type="checkbox" data-layer="context" checked> Neighbouring parcels and streets</label>
-        <label><input type="checkbox" data-layer="confidence"> Colour by confidence</label>
-        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
-      </div>
+      <div class="grip"></div><button class="close" data-close>×</button>
+      <h2>Layers</h2>
+      <h3>General</h3>
+      <label><input type="checkbox" data-layer="ortho"> Ortho imagery</label>
+      <div class="sub"><span class="note">Imagery opacity</span> <input type="range" id="ortho-opacity" min="0" max="1" step="0.05" value="0.85"></div>
+      <label><input type="checkbox" data-layer="csg"> Cadastral polygon (CSG)</label>
+      <label><input type="checkbox" data-layer="sg"> Survey diagram + river-middle line</label>
+      <label><input type="checkbox" data-layer="context" checked> Neighbouring parcels and streets</label>
+      <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+      <h3>Features</h3>
+      <div id="layer-categories"></div>
+    </div>
     <div class="sheet" id="feature-sheet">
         <div class="grip"></div><button class="close" data-close>×</button>
         <div id="feature-body"></div>

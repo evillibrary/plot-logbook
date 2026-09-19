@@ -13,7 +13,7 @@ button { cursor: pointer; }
 .hidden, [hidden] { display: none !important; }
 
 #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
-main { position: relative; min-height: 0; overflow: hidden; }
+main { position: relative; min-height: 0; overflow: clip; }
 .view { position: absolute; inset: 0; overflow: auto; padding: 12px 16px calc(var(--safe-b) + 12px); }
 .view[data-view="map"] { padding: 0; overflow: hidden; }
 
@@ -53,9 +53,23 @@ main { position: relative; min-height: 0; overflow: hidden; }
 .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
 .actions button { padding: 10px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
 .actions button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.layers h3 { margin: 14px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .layers label { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
-.layers label:last-child { border-bottom: 0; }
+.layers .sub { display: flex; align-items: center; gap: 10px; padding: 4px 0 8px 30px; border-bottom: 1px solid var(--line); }
 .layers input[type=range] { flex: 1; }
+.layers .swatch { display: inline-flex; width: 22px; height: 22px; }
+.layers .swatch svg { width: 22px; height: 22px; }
+.z-lo .feat-icon svg { transform: scale(.72); transform-origin: center; }
+.feat-icon { filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.35)); }
+.leaflet-tooltip.lbl { margin-left: 4px; }
+.draw-bar { position: absolute; left: 10px; right: 10px; bottom: 12px; z-index: 550; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.draw-bar .draw-info { margin-bottom: 8px; }
+.draw-bar .row { gap: 6px; }
+.draw-bar .btn { padding: 8px 10px; }
+.list-search { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 10px; margin: 6px 0 10px; }
+.list-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.list-item .ic { width: 26px; height: 26px; flex: none; }
+.list-item .meta { color: var(--muted); font-size: 12px; }
 .timeline { list-style: none; margin: 0; padding: 0; }
 .timeline li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .timeline time { color: var(--muted); font-size: 12px; display: block; }

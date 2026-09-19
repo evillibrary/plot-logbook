@@ -47,15 +47,19 @@ export function fold(plot, events) {
         break;
       }
       case "job.delete": jobs.delete(e.job); break;
-      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.confidence ?? "low", photos: [], description: e.description ?? "", visible: true, geom: e.geom, origin: "app", since: e.ts }); break;
+      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by }); break;
       case "feature.move": if (features.has(e.feature)) { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; } break;
       case "feature.edit": if (features.has(e.feature)) Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
       case "feature.retire": if (features.has(e.feature)) { features.get(e.feature).retired = e.ts; features.get(e.feature).retireNote = e.note ?? ""; } break;
+      case "feature.unretire": if (features.has(e.feature)) { const f = features.get(e.feature); delete f.retired; delete f.retireNote; } break;
+      case "feature.delete": if (features.has(e.feature)) { features.get(e.feature).deleted = e.ts; features.get(e.feature).deletedBy = e.by; } break;
+      case "feature.undelete": if (features.has(e.feature)) { const f = features.get(e.feature); delete f.deleted; delete f.deletedBy; } break;
     }
   }
   const byFeature = new Map();
   const add = (fid, kind, item) => { if (!fid) return; (byFeature.get(fid) ?? byFeature.set(fid, []).get(fid)).push({ kind, ts: item.ts ?? item.taken, item }); };
   for (const o of obs) add(o.feature, "observe", o);
+  for (const w of water) add(w.feature, "water", { ...w, ts: w.at ? w.at + (w.at.length === 16 ? ":00" : "") : w.ts });
   for (const p of photos.values()) add(p.feature, "photo", { ...p, ts: p.taken || p.ts });
   for (const j of jobs.values()) { add(j.feature, "job", { ...j, ts: j.created }); for (const h of j.history) add(j.feature, "job.done", { ...j, ts: h.ts, by: h.by }); }
   for (const list of byFeature.values()) list.sort((a, b) => a.ts < b.ts ? 1 : -1);

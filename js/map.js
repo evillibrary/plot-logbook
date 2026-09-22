@@ -74,6 +74,30 @@ export function buildMap(container, plot, grid, opts = {}) {
   }
   for (const f of plot.features) draw(f);
 
+  // Pets and livestock have no position of their own, so they were only ever reachable from
+  // the list. Park them over the house instead, stacked upwards in screen pixels: a metric
+  // offset would collapse into one pile as you zoom out, and a column keeps the name labels
+  // off each other in a way a row does not.
+  const isHouse = f => f.name.trim().toLowerCase().split(" ")[0] === "house";
+  const houseF = plot.features.find(f => f.geom && f.type === "structures" && isHouse(f));
+  // the middle of the shape as the eye reads it: centroid() averages vertices, which slides
+  // off centre whenever one wall carries more nodes than another
+  const midOf = xy => { const xs = xy.map(p => p[0]), ys = xy.map(p => p[1]);
+    return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+  const anchorXY = houseF ? (houseF.geom.type === "Point" ? houseF.geom.xy : midOf(houseF.geom.xy))
+    : midOf(plot.home.bounds);
+  const homeless = plot.features.filter(f => !f.geom && CAT[f.type]?.geom === "none");
+  homeless.forEach((f, i) => {
+    const c = catOf(f), dy = 18 + i * 30;                  // first one sits on the roof, the rest above it
+    const icon = L.divIcon({ className: "feat-icon", html: iconSvg(c, 28), iconSize: [28, 28], iconAnchor: [14, 14 + dy], tooltipAnchor: [14, 0] });
+    const layer = L.marker(ll(anchorXY), { icon, riseOnHover: true });
+    label(layer, f.name);
+    layer.feature = f;
+    layer.on("click", e => { L.DomEvent.stop(e); opts.onSelect?.(f, layer); });
+    layer.addTo(g(c.id));
+    byId.set(f.id, layer);
+  });
+
   g("zones").addTo(map); g("context").addTo(map);
   for (const c of CATEGORIES) g(c.id).addTo(map);
 
@@ -147,7 +171,7 @@ export function buildMap(container, plot, grid, opts = {}) {
   }
   function cancelDraw() { drawing.shape?.remove(); for (const d of drawing.dots) d.remove(); Object.assign(drawing, { type: null, pts: [], shape: null, dots: [] }); }
 
-  const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
+  const center = f => !f.geom ? ll(anchorXY) : f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
 

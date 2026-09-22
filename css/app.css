@@ -50,6 +50,14 @@ main { position: relative; min-height: 0; overflow: clip; }
 .sheet .grip:active::before { background: var(--muted); width: 52px; }
 .sheet.dragging { transition: none; }
 .sheet h2 { margin: 0 0 4px; font-size: 18px; }
+/* collapsible groups in the layers panel; the summary replaces what was an h3 */
+.sheet .grp { border-top: 1px solid var(--line); margin-top: 6px; }
+.sheet .grp > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 9px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.sheet .grp > summary::-webkit-details-marker { display: none; }
+.sheet .grp > summary::before { content: ""; width: 0; height: 0; border: 5px solid transparent; border-left-color: var(--muted); transition: transform .15s; transform-origin: 2px 50%; }
+.sheet .grp[open] > summary::before { transform: rotate(90deg); }
+.sheet .grp > summary:hover { color: var(--ink); }
+.see-through { padding-bottom: 10px; }                 /* the group border below is the divider */
 .sheet .close { position: absolute; top: 10px; right: 12px; border: 0; background: none; font-size: 22px; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eee; color: #333; }

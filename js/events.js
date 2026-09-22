@@ -101,7 +101,7 @@ export async function push(source, ctx, onStatus) {
 
 export async function pull(source, onStatus) {
   const seen = (await db.get("kv", "logShas")) ?? {};
-  let n = 0;
+  let n = 0, features = false;                 // whether anything that arrived changes the map
   const dirs = await source.list("log");
   for (const d of dirs.filter(x => x.type === "dir")) {
     for (const f of (await source.list(d.path)).filter(x => x.name.endsWith(".jsonl"))) {
@@ -112,6 +112,7 @@ export async function pull(source, onStatus) {
       const rows = text.split("\n").filter(Boolean).map(l => ({ ...JSON.parse(l), synced: 1 }));
       const local = new Set(await db.keys("events"));
       const fresh = rows.filter(r => !local.has(r.id));
+      if (fresh.some(r => String(r.op).startsWith("feature."))) features = true;
       // rows already in the local store that were ours and unsynced are now confirmed
       await db.putManyKeyed("events", rows);
       n += fresh.length;
@@ -119,5 +120,5 @@ export async function pull(source, onStatus) {
     }
   }
   await db.put("kv", seen, "logShas");
-  return n;
+  return { n, features };
 }

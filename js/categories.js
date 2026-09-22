@@ -1,9 +1,11 @@
 // Every feature belongs to exactly one category. Colour, glyph and the natural geometry
 // (point / line / area / none) live here so the map, forms, list and layers panel agree.
-// Glyphs are 24x24 SVG paths, drawn to read at 14 px inside a coloured disc.
+// Glyphs are 24x24 SVG paths, drawn to read at 14 px inside a coloured disc. Hand-authored
+// rather than taken from an icon set: they are filled shapes on a disc, where the usual sets
+// are stroked outlines, and vendoring one for a dozen glyphs is not worth the weight.
 export const CATEGORIES = [
   { id: "trees",      name: "Trees & plants",  color: "#3e8a3a", geom: "point",
-    glyph: "M12 2C8 2 5 5.5 5 9c0 2.5 1.5 4.5 3.5 5.5L8 20h8l-.5-5.5C17.5 13.5 19 11.5 19 9c0-3.5-3-7-7-7z" },
+    glyph: "M12 2c-2 0-3.8 1.1-4.7 2.8-.3-.1-.6-.1-.9-.1C4.5 4.7 3 6.3 3 8.2c0 1.1.5 2.1 1.3 2.8-.2.5-.3 1-.3 1.5 0 1.9 1.5 3.4 3.4 3.4h3.4L10.5 22h3l-.3-6.1h3.4c1.9 0 3.4-1.5 3.4-3.4 0-.5-.1-1-.3-1.5.8-.7 1.3-1.7 1.3-2.8 0-1.9-1.5-3.5-3.4-3.5-.3 0-.6 0-.9.1C15.8 3.1 14 2 12 2z" },
   { id: "water",      name: "Water",           color: "#2f7fd0", geom: "point",
     glyph: "M12 2.5S5.5 10 5.5 14.5a6.5 6.5 0 0 0 13 0C18.5 10 12 2.5 12 2.5z" },
   { id: "structures", name: "Structures",      color: "#7a6f60", geom: "area",
@@ -11,11 +13,11 @@ export const CATEGORIES = [
   { id: "fences",     name: "Fences",          color: "#8a4b1e", geom: "line",
     glyph: "M4 4h3v16H4zM10.5 4h3v16h-3zM17 4h3v16h-3zM2 8h20v2H2zM2 14h20v2H2z" },
   { id: "paddocks",   name: "Paddocks",        color: "#b8962e", geom: "area",
-    glyph: "M3 5h18v14H3zM5 7v10h14V7zM7 9h4v6H7z" },
+    glyph: "M3.2 4.6c1.9 0 3.5.8 4.6 2.1C8.9 6.2 10.4 5.9 12 5.9s3.1.3 4.2.8c1.1-1.3 2.7-2.1 4.6-2.1.3 0 .5.3.4.6-.3 1.5-1.1 2.8-2.2 3.6.2.7.3 1.4.3 2.2 0 4-2.7 7.1-7.3 7.1s-7.3-3.1-7.3-7.1c0-.8.1-1.5.3-2.2C3.9 7.9 3.1 6.6 2.8 5.2c-.1-.3.1-.6.4-.6zM9.2 10a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6zm5.6 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z" },
   { id: "growing",    name: "Growing areas",   color: "#5aa24a", geom: "area",
-    glyph: "M4 19h16v2H4zM6 17c0-4 2-7 6-8 4 1 6 4 6 8H6zM12 4c1.5 1 2 3 2 5h-4c0-2 .5-4 2-5z" },
+    glyph: "M8.8 1.8h6.4V4h-2.1v8.6h4.3v4.2c0 2.5-2 4.6-5.4 5.4-3.4-.8-5.4-2.9-5.4-5.4v-4.2h4.3V4H8.8z" },
   { id: "access",     name: "Access & yard",   color: "#d9782a", geom: "point",
-    glyph: "M3 6h2v12H3zM19 6h2v12h-2zM6 8h12v2H6zM6 14h12v2H6zM11 8h2v8h-2z" },
+    glyph: "M1.8 3.6h2.6v16.8H1.8zM19.6 3.6h2.6v16.8h-2.6zM4.8 6h14.4v2.6H4.8zM4.8 15.4h14.4V18H4.8zM5.4 14.9 18.4 7l1.3 2.2L6.7 17.1z" },
   { id: "vegetation", name: "Vegetation",      color: "#6e9a5b", geom: "line",
     glyph: "M12 3c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-5-4-7-6-11zm0 16a4 4 0 0 1-4-4c0-3 2-5 4-8 2 3 4 5 4 8a4 4 0 0 1-4 4z" },
   { id: "other",      name: "Other",           color: "#7b6fa8", geom: "point",

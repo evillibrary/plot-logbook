@@ -8,12 +8,12 @@ import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
 import { renderFeature, renderList } from "./ui/sheet.js";
-import { CATEGORIES, iconSvg } from "./categories.js";
+import { CATEGORIES, CAT, iconSvg } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.1";
+const VERSION = "0.2.2";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -60,6 +60,18 @@ const app = {
       || $("layers-sheet").classList.contains("open");
   },
 
+  // Never reload out from under a half-written note; the events are safe in IndexedDB either
+  // way, but losing what is on screen is not the same thing.
+  applyUpdate() {
+    if (!this._updateReady || this._reloading) return;
+    if (this.busyWithSomething()) {
+      if (!this._updateAnnounced) { this._updateAnnounced = true; toast("Update ready — applying when you have finished here", 5000); }
+      return;
+    }
+    this._reloading = true;
+    location.reload();
+  },
+
   async checkPlot() {
     if (!this.source || !this.plot) return false;
     let remote;
@@ -92,7 +104,7 @@ const app = {
     const grid = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && (f.geom || CAT[f.type]?.geom === "none")) };
     this.mapApi = buildMap($("map"), live, grid, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       onStatus: msg => toast(msg),
@@ -126,11 +138,12 @@ const app = {
       let sent = 0, up = 0;
       try { sent = await events.push(this.source, this.ctx, status); up = await photos.uploadPending(this.source, status); }
       catch (e) { if (!/read-only/.test(e.message)) throw e; }
-      if (got) { await this.refold(); this.render(); }
+      // a feature someone else added or moved has to reach the map now, not on the next open
+      if (got.n) { await this.refold(); if (got.features) this._needsMap = true; this.render(); }
       await this.checkPlot();
       const pending = (await db.unsynced()).length;
       this.setSyncPill(pending ? "pending" : "ok", pending ? `${pending} to send` : "synced");
-      if (manual) toast(`sync: ${got} received, ${sent} sent, ${up} photos`);
+      if (manual) toast(`sync: ${got.n} received, ${sent} sent, ${up} photos`);
     } catch (e) {
       this.setSyncPill("err", "sync failed");
       if (manual) toast(`sync failed: ${e.message}`, 5000);
@@ -174,6 +187,7 @@ const app = {
   closeSheet() {
     $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false;
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
   },
   showForm(form) {
     this._formOpen = true;
@@ -231,6 +245,8 @@ const app = {
     $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
     this.render();
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
+    this.applyUpdate();
   },
   async finishDraw() {
     const mode = this.pickMode, geom = this.mapApi.draw.finish();
@@ -297,7 +313,7 @@ async function boot() {
   $("draw-cancel").addEventListener("click", () => app.endDraw());
   // one toggle per category under "Features"
   const catBox = $("layer-categories");
-  for (const c of CATEGORIES.filter(c => c.geom !== "none")) {
+  for (const c of CATEGORIES) {
     const cb = h("input", { type: "checkbox", checked: true, dataset: { layer: c.id } });
     const sw = h("span.swatch"); sw.innerHTML = iconSvg(c, 22);
     catBox.append(h("label", cb, sw, c.name));
@@ -306,6 +322,14 @@ async function boot() {
   $("sync-pill").addEventListener("click", () => app.source ? app.sync(true) : app.showTab("more"));
   $("jobs-strip").addEventListener("click", () => app.showTab("jobs"));
   $("ortho-opacity").addEventListener("input", e => app.mapApi?.overlays.ortho.opacity(+e.target.value));
+  // see the map through the layers panel, so ticking a box visibly does something
+  const sheetAlpha = v => { $("layers-sheet").style.opacity = v; $("sheet-opacity").value = v; };
+  sheetAlpha(app.settings.sheetOpacity ?? 1);
+  $("sheet-opacity").addEventListener("input", e => { sheetAlpha(e.target.value); app.settings.sheetOpacity = +e.target.value; app.saveSettings(); });
+  for (const d of document.querySelectorAll("#layers-sheet details.grp")) {
+    d.open = app.settings.layerGroups?.[d.id] ?? true;
+    d.addEventListener("toggle", () => { app.settings.layerGroups = { ...app.settings.layerGroups, [d.id]: d.open }; app.saveSettings(); });
+  }
   window.addEventListener("online", () => app.sync());
   window.addEventListener("offline", () => app.setSyncPill("pending", "offline"));
 
@@ -321,7 +345,14 @@ async function boot() {
     app.setSyncPill(app.source ? "pending" : "", app.source ? (navigator.onLine ? "…" : "offline") : "no source");
     app.sync();
   }
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(console.warn);
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    // The shell is cache-first, so new code only arrives with a new service worker, which
+    // claims the page as soon as it installs. The page in front of you is still running the
+    // old modules at that point: reload, or every update costs two opens.
+    const replacing = !!navigator.serviceWorker.controller;      // false on a first-ever install
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (replacing) { app._updateReady = true; app.applyUpdate(); } });
+    navigator.serviceWorker.register("sw.js").catch(console.warn);
+  }
   // ask the browser not to evict our IndexedDB under storage pressure: unsynced field notes live there
   navigator.storage?.persist?.().then(ok => { if (!ok) console.warn("persistent storage not granted"); });
 }

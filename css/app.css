@@ -24,6 +24,8 @@ main { position: relative; min-height: 0; overflow: clip; }
 /* map */
 #map { position: absolute; inset: 0; background: var(--ground); }
 #map.z-lo .lbl, #map.no-labels .lbl { display: none; }   /* zoomed too far out, or Labels switched off */
+/* while waiting for a tap, keep the crosshair even over a feature (Leaflet sets pointer) */
+#map.picking, #map.picking .leaflet-interactive, #map.picking .feat-icon { cursor: crosshair; }
 .leaflet-container { font: inherit; }
 .leaflet-bottom, .leaflet-top { z-index: 450; }
 @media (pointer: coarse) { .leaflet-control-zoom { display: none; } }

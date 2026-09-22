@@ -9,7 +9,9 @@ const lls = xys => xys.map(ll);
 export const toXY = latlng => [latlng.lng, latlng.lat];
 
 const ICONS = {};
-const iconFor = cat => (ICONS[cat.id] ??= L.divIcon({ className: "feat-icon", html: iconSvg(cat), iconSize: [28, 28], iconAnchor: [14, 14], tooltipAnchor: [14, 0] }));
+const iconFor = (cat, size = 28) => (ICONS[`${cat.id}:${size}`] ??= L.divIcon({
+  className: "feat-icon", html: iconSvg(cat, size), iconSize: [size, size],
+  iconAnchor: [size / 2, size / 2], tooltipAnchor: [size / 2, 0] }));
 
 export function buildMap(container, plot, grid, opts = {}) {
   const [oe, on] = grid.origin, m0 = grid.m_per_px_zoom0;
@@ -23,6 +25,7 @@ export function buildMap(container, plot, grid, opts = {}) {
   const groups = {};
   const g = name => (groups[name] ??= L.layerGroup());
   const byId = new Map();
+  const areaPins = [];
   const label = (layer, text, cls = "") => layer.bindTooltip(text, { permanent: true, direction: "right", offset: [8, 0], className: `lbl ${cls}`, interactive: false });
 
   // A feature swallowed taps that were meant for the map, so nothing could be placed inside
@@ -52,6 +55,7 @@ export function buildMap(container, plot, grid, opts = {}) {
     } else {
       layer = L.polygon(lls(xy), styleFor(f));
       const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c), riseOnHover: true, keyboard: false });
+      areaPins.push({ pin, cat: c, xy });
       label(pin, f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`);
       pin.feature = f;
       pin.on("click", e => tapped(e, f, layer));
@@ -93,7 +97,7 @@ export function buildMap(container, plot, grid, opts = {}) {
   let ortho = null, orthoOn = false;
   const toggle = name => v => v ? g(name).addTo(map) : g(name).remove();
   const overlays = {
-    ortho: { on: v => { orthoOn = v; setOrthoMode(v); if (!ortho) return; v ? ortho.addTo(map) : ortho.remove(); }, opacity: v => ortho?.setOpacity(v) },
+    ortho: { on: v => { orthoOn = v; setOrthoMode(v && !!ortho); if (!ortho) return; v ? ortho.addTo(map) : ortho.remove(); }, opacity: v => ortho?.setOpacity(v) },
     csg: { on: toggle("csg") }, sg: { on: toggle("sg") }, context: { on: toggle("context") },
     labels: { on: v => container.classList.toggle("no-labels", !v) },
   };
@@ -109,7 +113,16 @@ export function buildMap(container, plot, grid, opts = {}) {
     if (orthoOn) ortho.addTo(map);
   }
 
-  const onZoom = () => { const z = map.getZoom(); container.classList.toggle("z-lo", z < 0.6); container.classList.toggle("z-hi", z >= 1.5); };
+  function fitAreaIcons() {
+    for (const { pin, cat, xy } of areaPins) {
+      const pts = xy.map(p => map.latLngToContainerPoint(ll(p)));
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const across = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+      const size = Math.max(14, Math.min(28, Math.round(across * 0.85 / 2) * 2));
+      if (pin._size !== size) { pin._size = size; pin.setIcon(iconFor(cat, size)); }
+    }
+  }
+  const onZoom = () => { const z = map.getZoom(); container.classList.toggle("z-lo", z < 0.6); container.classList.toggle("z-hi", z >= 1.5); fitAreaIcons(); };
   map.on("zoomend", onZoom);
 
   // --- locate me ---

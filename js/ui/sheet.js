@@ -73,19 +73,26 @@ export function renderList(app) {
     clear(listEl);
     const q = search.value.trim().toLowerCase();
     const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q));
+    // Collapsed until you ask: thirty-odd features in one scroll is no way to find anything,
+    // and a typed query opens whatever it matched.
+    const group = (title, colour, rows, open) => {
+      const d = h("details.grp", { open });
+      d.append(h("summary", { style: { color: colour } }, `${title} (${rows.length})`), ...rows);
+      listEl.append(d);
+    };
     for (const c of CATEGORIES) {
       const items = all.filter(f => f.type === c.id);
       if (!items.length) continue;
-      listEl.append(h("h3", { style: { margin: "12px 0 2px", fontSize: "13px", color: c.color } }, `${c.name} (${items.length})`));
-      for (const f of items) {
+      group(c.name, c.color, items.map(f => {
         const n = (app.state.byFeature.get(f.id) ?? []).length;
-        listEl.append(h("div.list-item", { onclick: () => f.geom ? app.goTo(f.id) : app.openSheet(f) }, ico(c),
-          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`))));
-      }
+        return h("div.list-item", { onclick: () => f.geom ? app.goTo(f.id) : app.openSheet(f) }, ico(c),
+          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
+      }), !!q);
     }
     const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted);
-    if (retired.length && !q) listEl.append(h("h3", { style: { margin: "12px 0 2px", fontSize: "13px", color: "var(--muted)" } }, `Retired (${retired.length})`),
-      ...retired.map(f => h("div.list-item", { onclick: () => app.openSheet(f) }, ico(catOf(f)), h("div", f.name, h("div.meta", `retired ${f.retired.slice(0, 10)} ${f.retireNote ?? ""}`)))));
+    if (retired.length && !q) group("Retired", "var(--muted)", retired.map(f =>
+      h("div.list-item", { onclick: () => app.openSheet(f) }, ico(catOf(f)),
+        h("div", f.name, h("div.meta", `retired ${f.retired.slice(0, 10)} ${f.retireNote ?? ""}`)))), false);
   };
   search.addEventListener("input", draw);
   draw();

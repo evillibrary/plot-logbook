@@ -52,12 +52,12 @@
       <div class="sub see-through"><span class="note">See through this panel</span> <input type="range" id="sheet-opacity" min="0.2" max="1" step="0.05" value="1"></div>
       <details class="grp" id="grp-general" open>
         <summary>General</summary>
-        <label><input type="checkbox" data-layer="ortho"> Ortho imagery</label>
-        <div class="sub"><span class="note">Imagery opacity</span> <input type="range" id="ortho-opacity" min="0" max="1" step="0.05" value="0.85"></div>
+        <label><input type="checkbox" data-layer="ortho" checked> Satellite</label>
+        <div class="sub"><span class="note">Satellite opacity</span> <input type="range" id="ortho-opacity" min="0" max="1" step="0.05" value="0.85"></div>
+        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
         <label><input type="checkbox" data-layer="csg"> Cadastral polygon (CSG)</label>
         <label><input type="checkbox" data-layer="sg"> Survey diagram + river-middle line</label>
-        <label><input type="checkbox" data-layer="context" checked> Neighbouring parcels and streets</label>
-        <label><input type="checkbox" data-layer="labels" checked> Labels</label>
+        <label><input type="checkbox" data-layer="context"> Neighbouring parcels and streets</label>
       </details>
       <details class="grp" id="grp-features" open>
         <summary>Features</summary>

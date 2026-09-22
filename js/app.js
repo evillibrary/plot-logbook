@@ -13,7 +13,7 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.5";
+const VERSION = "0.2.6";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -231,11 +231,11 @@ const app = {
   startPick(mode, prompt) {
     this.pickMode = mode; this.closeSheet();
     $("pick-title").textContent = prompt; $("pick-bar").hidden = false; $("btn-add").hidden = true;
-    toast(prompt, 4000); $("map").style.cursor = "crosshair";
+    toast(prompt, 4000); $("map").classList.add("picking");
   },
   endPick() {
     this.pickMode = null;
-    $("pick-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
+    $("pick-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
   },
   cancelPick() {
     const was = this.pickMode; this.endPick();
@@ -245,10 +245,9 @@ const app = {
   startDraw(type, opts = {}) {                       // type: "line" | "area"
     this.closeSheet();
     this.pickMode = { kind: "draw", type, ...opts };
-    this.mapApi.draw.start(type);
+    this.mapApi.draw.start(type); $("map").classList.add("picking");
     $("draw-title").textContent = opts.feature ? `Redrawing ${opts.feature.name}` : type === "line" ? "New line" : "New area";
     $("pick-bar").hidden = true; $("draw-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
-    $("map").style.cursor = "crosshair";
     this.refreshDrawBar();
   },
   startRedraw(f) { this.startDraw(f.geom.type === "Polygon" ? "area" : "line", { feature: f }); },
@@ -261,7 +260,7 @@ const app = {
   },
   endDraw() {
     this.mapApi.draw.cancel(); this.pickMode = null;
-    $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
+    $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
     this.render();
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
     this.applyUpdate();

@@ -2,7 +2,7 @@
 // feature model rendered as vectors and imagery/boundaries as toggleable overlays.
 import { IdbTileLayer } from "./tiles.js";
 import { CATEGORIES, catOf, iconSvg } from "./categories.js";
-import { lineLength, polygonArea, fmtLength, fmtArea, centroid } from "./geo.js";
+import { lineLength, polygonArea, fmtLength, fmtArea, centroid, interiorPoint } from "./geo.js";
 
 const ll = xy => L.latLng(xy[1], xy[0]);           // [E, N] -> Leaflet latlng (lat = N, lng = E)
 const lls = xys => xys.map(ll);
@@ -25,6 +25,14 @@ export function buildMap(container, plot, grid, opts = {}) {
   const byId = new Map();
   const label = (layer, text, cls = "") => layer.bindTooltip(text, { permanent: true, direction: "right", offset: [8, 0], className: `lbl ${cls}`, interactive: false });
 
+  // A feature swallowed taps that were meant for the map, so nothing could be placed inside
+  // an area — a cow in a paddock, a crop in a bed. During a pick the tap falls through.
+  function tapped(e, f, layer) {
+    L.DomEvent.stop(e);
+    if (opts.picking?.()) opts.onPick?.(toXY(e.latlng));
+    else opts.onSelect?.(f, layer);
+  }
+
   function styleFor(f) {
     const c = catOf(f);
     if (f.geom.type === "LineString") return f.type === "fences" ? { color: c.color, weight: 4 } : { color: c.color, weight: 3, dashArray: "2 7" };
@@ -43,10 +51,14 @@ export function buildMap(container, plot, grid, opts = {}) {
       label(layer, `${f.name} · ${fmtLength(lineLength(xy))}`);
     } else {
       layer = L.polygon(lls(xy), styleFor(f));
-      label(layer, f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`);
+      const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c), riseOnHover: true, keyboard: false });
+      label(pin, f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`);
+      pin.feature = f;
+      pin.on("click", e => tapped(e, f, layer));
+      pin.addTo(group);
     }
     layer.feature = f;
-    layer.on("click", e => { L.DomEvent.stop(e); opts.onSelect?.(f, layer); });
+    layer.on("click", e => tapped(e, f, layer));
     layer.addTo(group);
     byId.set(f.id, layer);
     return layer;

@@ -142,3 +142,33 @@ test("geometry helpers: length, area, formatting", async () => {
   assert.equal(fmtArea(5000), "5 000 m²");
   assert.equal(fmtArea(12026), "1.20 ha (12 026 m²)");
 });
+
+test("an area's icon point lands inside the area, even when the centroid does not", async () => {
+  const { interiorPoint, centroid } = await import("../js/geo.js");
+  const inside = ([x, y], r) => {
+    let hit = false;
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i], [xj, yj] = r[j];
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+    }
+    return hit;
+  };
+
+  const square = [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]];
+  const p = interiorPoint(square);
+  assert.ok(Math.hypot(p[0] - 50, p[1] - 50) < 1, `square: expected the middle, got ${p}`);
+
+  // a horseshoe: the centroid falls in the gap, outside the ring
+  const horseshoe = [[0, 0], [100, 0], [100, 100], [70, 100], [70, 30], [30, 30], [30, 100], [0, 100], [0, 0]];
+  assert.ok(!inside(centroid(horseshoe), horseshoe), "the centroid really is outside this one");
+  assert.ok(inside(interiorPoint(horseshoe), horseshoe), "but the icon point is inside");
+
+  // a long thin strip: still inside, and near the spine
+  const strip = [[0, 0], [200, 0], [200, 10], [0, 10], [0, 0]];
+  const s = interiorPoint(strip);
+  assert.ok(inside(s, strip) && Math.abs(s[1] - 5) < 1.5, `strip: expected near the spine, got ${s}`);
+
+  // vertices given anticlockwise, and left open
+  const open = [[0, 0], [0, 60], [60, 60], [60, 0]];
+  assert.ok(inside(interiorPoint(open), open), "open anticlockwise ring");
+});

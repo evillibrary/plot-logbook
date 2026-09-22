@@ -13,7 +13,7 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.4";
+const VERSION = "0.2.5";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -107,6 +107,8 @@ const app = {
     const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
     this.mapApi = buildMap($("map"), live, grid, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
+      picking: () => !!this.pickMode,
+      onPick: xy => this.onMapClick(xy),
       onStatus: msg => toast(msg),
       onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "draw") this.refreshDrawBar(); },
     });
@@ -221,14 +223,31 @@ const app = {
   },
 
   // --- picking and drawing on the map ---
-  startMove(f) { this.pickMode = { kind: "move", feature: f }; this.closeSheet(); toast(f.geom ? `Tap the new position for ${f.name}` : `Tap where ${f.name} is`, 4000); $("map").style.cursor = "crosshair"; },
-  startAdd(type) { this.pickMode = { kind: "add", type }; this.closeSheet(); toast("Tap the map where the new feature is", 4000); $("map").style.cursor = "crosshair"; },
+  startMove(f) { this.startPick({ kind: "move", feature: f }, f.geom ? `Tap the new position for ${f.name}` : `Tap where ${f.name} is`); },
+  startAdd(type) { this.startPick({ kind: "add", type }, "Tap the map where the new feature is"); },
+
+  // Any wait-for-a-tap shows a bar with a way out: before 0.2.5 the only escapes from a
+  // half-started move were a wrong tap or a reload.
+  startPick(mode, prompt) {
+    this.pickMode = mode; this.closeSheet();
+    $("pick-title").textContent = prompt; $("pick-bar").hidden = false; $("btn-add").hidden = true;
+    toast(prompt, 4000); $("map").style.cursor = "crosshair";
+  },
+  endPick() {
+    this.pickMode = null;
+    $("pick-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
+  },
+  cancelPick() {
+    const was = this.pickMode; this.endPick();
+    if (was?.kind === "move") this.openSheet(this.state.features.get(was.feature.id) ?? was.feature);
+    toast("cancelled");
+  },
   startDraw(type, opts = {}) {                       // type: "line" | "area"
     this.closeSheet();
     this.pickMode = { kind: "draw", type, ...opts };
     this.mapApi.draw.start(type);
     $("draw-title").textContent = opts.feature ? `Redrawing ${opts.feature.name}` : type === "line" ? "New line" : "New area";
-    $("draw-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    $("pick-bar").hidden = true; $("draw-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
     $("map").style.cursor = "crosshair";
     this.refreshDrawBar();
   },
@@ -265,7 +284,7 @@ const app = {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
     if (mode.kind === "draw") { this.mapApi.draw.add(xy); this.refreshDrawBar(); return; }
-    this.pickMode = null; $("map").style.cursor = "";
+    this.endPick();
     if (mode.kind === "move") {
       const f = mode.feature;
       await this.record({ op: "feature.move", feature: f.id, geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: this.unproject(xy).map(v => +v.toFixed(7)) }, confidence: "medium" });
@@ -288,7 +307,6 @@ const app = {
       gps && item(`\ud83d\udccd Point at my GPS position (\u00b1${Math.round(gps.acc)} m)`, () => this.showForm(featureForm(this, { type: "Point", xy: gps.xy.map(v => +v.toFixed(2)) }, { viaGps: true }))),
       item("\u2571 Line \u2014 a fence, a pipe, a path", () => this.startDraw("line")),
       item("\u2b20 Area \u2014 a paddock, a bed, a stand", () => this.startDraw("area")),
-      item("\ud83d\udc3e Pet or animal \u2014 tap its place on the map", () => this.startAdd("pets")),
     ));
   },
 };
@@ -311,6 +329,8 @@ async function boot() {
   $("draw-undo").addEventListener("click", () => { app.mapApi.draw.undo(); app.refreshDrawBar(); });
   $("draw-finish").addEventListener("click", () => app.finishDraw());
   $("draw-cancel").addEventListener("click", () => app.endDraw());
+  $("pick-cancel").addEventListener("click", () => app.cancelPick());
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && app.pickMode) app.pickMode.kind === "draw" ? app.endDraw() : app.cancelPick(); });
   // one toggle per category under "Features"
   const catBox = $("layer-categories");
   for (const c of CATEGORIES) {

@@ -23,7 +23,7 @@ main { position: relative; min-height: 0; overflow: clip; }
 
 /* map */
 #map { position: absolute; inset: 0; background: var(--ground); }
-#map.z-lo .lbl { display: none; }
+#map.z-lo .lbl, #map.no-labels .lbl { display: none; }   /* zoomed too far out, or Labels switched off */
 .leaflet-container { font: inherit; }
 .leaflet-bottom, .leaflet-top { z-index: 450; }
 @media (pointer: coarse) { .leaflet-control-zoom { display: none; } }

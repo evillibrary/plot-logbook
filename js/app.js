@@ -8,12 +8,12 @@ import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
 import { renderFeature, renderList } from "./ui/sheet.js";
-import { CATEGORIES, CAT, iconSvg } from "./categories.js";
+import { CATEGORIES, iconSvg } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.3";
+const VERSION = "0.2.4";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -104,7 +104,7 @@ const app = {
     const grid = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && (f.geom || CAT[f.type]?.geom === "none")) };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
     this.mapApi = buildMap($("map"), live, grid, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       onStatus: msg => toast(msg),
@@ -221,8 +221,8 @@ const app = {
   },
 
   // --- picking and drawing on the map ---
-  startMove(f) { this.pickMode = { kind: "move", feature: f }; this.closeSheet(); toast(`Tap the new position for ${f.name}`, 4000); $("map").style.cursor = "crosshair"; },
-  startAdd() { this.pickMode = { kind: "add" }; this.closeSheet(); toast("Tap the map where the new feature is", 4000); $("map").style.cursor = "crosshair"; },
+  startMove(f) { this.pickMode = { kind: "move", feature: f }; this.closeSheet(); toast(f.geom ? `Tap the new position for ${f.name}` : `Tap where ${f.name} is`, 4000); $("map").style.cursor = "crosshair"; },
+  startAdd(type) { this.pickMode = { kind: "add", type }; this.closeSheet(); toast("Tap the map where the new feature is", 4000); $("map").style.cursor = "crosshair"; },
   startDraw(type, opts = {}) {                       // type: "line" | "area"
     this.closeSheet();
     this.pickMode = { kind: "draw", type, ...opts };
@@ -271,7 +271,7 @@ const app = {
       await this.record({ op: "feature.move", feature: f.id, geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: this.unproject(xy).map(v => +v.toFixed(7)) }, confidence: "medium" });
       this.render(); toast(`${f.name} moved`);
     } else {
-      this.showForm(featureForm(this, { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)] }));
+      this.showForm(featureForm(this, { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)] }, mode.type ? { type: mode.type } : {}));
     }
   },
   showList() { this.showForm(renderList(this)); },
@@ -288,7 +288,7 @@ const app = {
       gps && item(`\ud83d\udccd Point at my GPS position (\u00b1${Math.round(gps.acc)} m)`, () => this.showForm(featureForm(this, { type: "Point", xy: gps.xy.map(v => +v.toFixed(2)) }, { viaGps: true }))),
       item("\u2571 Line \u2014 a fence, a pipe, a path", () => this.startDraw("line")),
       item("\u2b20 Area \u2014 a paddock, a bed, a stand", () => this.startDraw("area")),
-      item("\ud83d\udc3e Pet or animal (no position)", () => this.showForm(featureForm(this, null))),
+      item("\ud83d\udc3e Pet or animal \u2014 tap its place on the map", () => this.startAdd("pets")),
     ));
   },
 };

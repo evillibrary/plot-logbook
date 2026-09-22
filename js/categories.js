@@ -13,7 +13,7 @@ export const CATEGORIES = [
   { id: "fences",     name: "Fences",          color: "#8a4b1e", geom: "line",
     glyph: "M4 4h3v16H4zM10.5 4h3v16h-3zM17 4h3v16h-3zM2 8h20v2H2zM2 14h20v2H2z" },
   { id: "paddocks",   name: "Paddocks",        color: "#b8962e", geom: "area",
-    glyph: "M3.2 4.6c1.9 0 3.5.8 4.6 2.1C8.9 6.2 10.4 5.9 12 5.9s3.1.3 4.2.8c1.1-1.3 2.7-2.1 4.6-2.1.3 0 .5.3.4.6-.3 1.5-1.1 2.8-2.2 3.6.2.7.3 1.4.3 2.2 0 4-2.7 7.1-7.3 7.1s-7.3-3.1-7.3-7.1c0-.8.1-1.5.3-2.2C3.9 7.9 3.1 6.6 2.8 5.2c-.1-.3.1-.6.4-.6zM9.2 10a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6zm5.6 0a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6z" },
+    glyph: "M2 19.4h20V22H2zM10.9 19.4c-.9-4.7-.5-9.2 1.1-13.7 1.6 4.5 2 9 1.1 13.7h-2.2zM5.2 19.4c-1.5-3.3-2-6.9-1.4-10.7 2.2 3 3.4 6.6 3.6 10.7H5.2zM16.6 19.4c.2-4.1 1.4-7.7 3.6-10.7.6 3.8.1 7.4-1.4 10.7h-2.2z" },
   { id: "growing",    name: "Growing areas",   color: "#5aa24a", geom: "area",
     glyph: "M8.8 1.8h6.4V4h-2.1v8.6h4.3v4.2c0 2.5-2 4.6-5.4 5.4-3.4-.8-5.4-2.9-5.4-5.4v-4.2h4.3V4H8.8z" },
   { id: "access",     name: "Access & yard",   color: "#d9782a", geom: "point",
@@ -22,10 +22,10 @@ export const CATEGORIES = [
     glyph: "M12 3c-2 4-6 6-6 11a6 6 0 0 0 12 0c0-5-4-7-6-11zm0 16a4 4 0 0 1-4-4c0-3 2-5 4-8 2 3 4 5 4 8a4 4 0 0 1-4 4z" },
   { id: "other",      name: "Other",           color: "#7b6fa8", geom: "point",
     glyph: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm-1.5 5h3v5h-3z" },
-  { id: "pets",       name: "Pets",            color: "#c25b8a", geom: "none",
+  { id: "pets",       name: "Pets",            color: "#c25b8a", geom: "point",
     glyph: "M6 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm12 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM9 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM12 11c3 0 6 2.5 6 5.5S16 20 12 20s-6-.5-6-3.5S9 11 12 11z" },
-  { id: "livestock",  name: "Livestock",       color: "#a0522d", geom: "none",
-    glyph: "M4 6c2 0 3 2 3 3h10c0-1 1-3 3-3v3c-1 0-2 1-2 2v5h-3v-3h-6v3H6v-5c0-1-1-2-2-2z" },
+  { id: "livestock",  name: "Livestock",       color: "#a0522d", geom: "point",
+    glyph: "M12 8.6c3.2 0 5.6 2.4 5.6 5.6 0 3.6-2.5 6.4-5.6 6.4s-5.6-2.8-5.6-6.4c0-3.2 2.4-5.6 5.6-5.6zM8.6 10.2C5.8 11 2.9 10 1.6 7.5.7 5.7 1 3.5 2.3 2l2 1.8c-.7.8-.9 1.9-.4 2.9.7 1.4 2.4 2 3.9 1.4.2.8.4 1.5.8 2.1zM15.4 10.2c.4-.6.6-1.3.8-2.1 1.5.6 3.2 0 3.9-1.4.5-1 .3-2.1-.4-2.9l2-1.8c1.3 1.5 1.6 3.7.7 5.5-1.3 2.5-4.2 3.5-7 2.7z" },
 ];
 export const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 export const catOf = f => CAT[f.type] ?? CAT.other;

@@ -10,9 +10,9 @@ const select = (opts, value) => h("select", {}, ...opts.map(([v, t]) => h("optio
 
 export const liveFeatures = app => [...app.state.features.values()].filter(f => !f.deleted && !f.retired).sort((a, b) => a.name.localeCompare(b.name));
 const featurePicker = (app, value, filter = () => true) => select([["", "— no feature —"], ...liveFeatures(app).filter(filter).map(f => [f.id, `${f.name} (${CAT[f.type]?.name ?? f.type})`])], value ?? "");
-// category choices that suit a geometry kind: point / line / area / none
-const catsFor = kind => CATEGORIES.filter(c => kind === "none" ? c.geom === "none" : c.geom !== "none");
-const catSelect = (kind, value) => select(catsFor(kind).map(c => [c.id, c.name]), value ?? catsFor(kind).find(c => c.geom === kind)?.id ?? catsFor(kind)[0].id);
+// Every category takes a point, so the choice is the whole list; the default is the category
+// whose natural geometry matches what is being drawn.
+const catSelect = (kind, value) => select(CATEGORIES.map(c => [c.id, c.name]), value ?? CATEGORIES.find(c => c.geom === kind)?.id ?? CATEGORIES[0].id);
 
 // Pick photos from camera/gallery, prepare them, show thumbs. Returns {el, list()}
 function photoPicker(app) {

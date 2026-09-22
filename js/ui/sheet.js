@@ -1,7 +1,7 @@
 // The feature sheet: what a tapped feature is, what has happened to it, and the actions.
-// Also the searchable list of every feature (the way to reach pets and animals, which have no dot).
+// Also the searchable list of every feature, and the way back to anything not yet placed.
 import { h, clear, fmtWhen, toast } from "./dom.js";
-import { observeForm, photoForm, jobForm, waterForm, editForm, featureForm, liveFeatures } from "./forms.js";
+import { observeForm, photoForm, jobForm, waterForm, editForm, liveFeatures } from "./forms.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, catOf, iconSvg } from "../categories.js";
 import { describeGeom } from "../geo.js";
@@ -47,6 +47,7 @@ export function renderFeature(app, f) {
         f.type === "water" ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, "💧 Reading") : h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit")),
       h("div.actions",
         f.type === "water" && h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit"),
+        !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
         f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
         f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startRedraw(f) }, "⤧ Redraw"),
         f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")
@@ -74,14 +75,13 @@ export function renderList(app) {
     const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q));
     for (const c of CATEGORIES) {
       const items = all.filter(f => f.type === c.id);
-      if (!items.length && !(c.geom === "none" && !q)) continue;
+      if (!items.length) continue;
       listEl.append(h("h3", { style: { margin: "12px 0 2px", fontSize: "13px", color: c.color } }, `${c.name} (${items.length})`));
       for (const f of items) {
         const n = (app.state.byFeature.get(f.id) ?? []).length;
         listEl.append(h("div.list-item", { onclick: () => f.geom ? app.goTo(f.id) : app.openSheet(f) }, ico(c),
           h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`))));
       }
-      if (c.geom === "none") listEl.append(h("button.btn", { style: { marginTop: "4px" }, onclick: () => app.showForm(featureForm(app, null, { type: c.id })) }, `+ New ${c.name.toLowerCase().replace(/s$/, "")}`));
     }
     const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted);
     if (retired.length && !q) listEl.append(h("h3", { style: { margin: "12px 0 2px", fontSize: "13px", color: "var(--muted)" } }, `Retired (${retired.length})`),

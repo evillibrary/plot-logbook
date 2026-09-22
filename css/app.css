@@ -15,6 +15,10 @@ button { cursor: pointer; }
 #app { position: fixed; inset: 0; display: grid; grid-template-rows: 1fr auto; }
 main { position: relative; min-height: 0; overflow: clip; }
 .view { position: absolute; inset: 0; overflow: auto; padding: 12px 16px calc(var(--safe-b) + 12px); }
+/* Pinching a panel zoomed the whole page: the layout is fixed to the viewport, so a zoomed-in
+   page strands it off-screen with no way back short of a reload. The map does its own pinch
+   (Leaflet sets touch-action on its container), so only the surfaces around it need this. */
+.view:not([data-view="map"]), nav.tabs { touch-action: pan-y; }
 .view[data-view="map"] { padding: 0; overflow: hidden; }
 
 /* map */
@@ -41,7 +45,7 @@ main { position: relative; min-height: 0; overflow: clip; }
 .locate-dot { width: 16px; height: 16px; border-radius: 50%; background: #1a73e8; border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,232,.4); }
 
 /* layers panel + sheet */
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel); border-radius: 16px 16px 0 0; box-shadow: 0 -2px 12px rgba(0,0,0,.18); z-index: 600; max-height: 85%; overflow: auto; padding: 8px 16px calc(var(--safe-b) + 16px); transform: translateY(105%); transition: transform .2s ease; }
+.sheet { touch-action: pan-y; position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel); border-radius: 16px 16px 0 0; box-shadow: 0 -2px 12px rgba(0,0,0,.18); z-index: 600; max-height: 85%; overflow: auto; padding: 8px 16px calc(var(--safe-b) + 16px); transform: translateY(105%); transition: transform .2s ease; }
 .sheet.open { transform: none; }
 /* a full-width drag handle: the bar is only the part you can see */
 .sheet .grip { height: 28px; margin: -4px 0 2px; display: flex; align-items: center; justify-content: center; cursor: grab; touch-action: none; }

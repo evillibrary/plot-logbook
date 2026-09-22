@@ -17,7 +17,8 @@ export class GitHubSource {
     this.name = `${owner}/${repo}`;
     this.shas = new Map();                     // path -> sha of the version we last saw
   }
-  url(path) { return `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${this.prefix}/${path}`; }
+  url(path) { return `https://api.github.com/repos/${this.owner}/${this.repo}/contents/${this.prefix}${path ? "/" + path : ""}`; }
+  join(dir, name) { return dir ? `${dir}/${name}` : name; }
   headers(accept = "application/vnd.github+json") {
     return { Authorization: `Bearer ${this.token}`, Accept: accept, "X-GitHub-Api-Version": "2022-11-28" };
   }
@@ -50,8 +51,16 @@ export class GitHubSource {
     const r = await this.fetch(dir);
     if (!r) return [];
     const items = await r.json();
-    for (const it of items) this.shas.set(`${dir}/${it.name}`, it.sha);
-    return items.map(it => ({ name: it.name, path: `${dir}/${it.name}`, type: it.type, sha: it.sha, size: it.size }));
+    for (const it of items) this.shas.set(this.join(dir, it.name), it.sha);
+    return items.map(it => ({ name: it.name, path: this.join(dir, it.name), type: it.type, sha: it.sha, size: it.size }));
+  }
+  // A cheap identity for a file, so the app can notice the base data has been rebuilt.
+  // The directory listing carries every blob sha in a few hundred bytes; fetching the file
+  // itself would cost ~100 KB a sync.
+  async version(path) {
+    const i = path.lastIndexOf("/");
+    const items = await this.list(i < 0 ? "" : path.slice(0, i));
+    return items.find(it => it.name === path.slice(i + 1))?.sha ?? null;
   }
   async sha(path) {
     if (this.shas.has(path)) return this.shas.get(path);
@@ -106,6 +115,19 @@ export class HttpSource {
     if (!t) return [];
     return [...t.matchAll(/href="([^"?/][^"]*?)(\/?)"/g)]
       .map(m => ({ name: decodeURIComponent(m[1]), path: `${dir}/${decodeURIComponent(m[1])}`, type: m[2] ? "dir" : "file", sha: null }));
+  }
+  // GitHub answers with a content hash; a plain server may not. python http.server sends
+  // neither an ETag nor better than whole-second timestamps, so fall back to hashing the
+  // body: two rebuilds a second apart with the same byte count must still look different.
+  async version(path) {
+    const h = await fetch(this.base + path, { method: "HEAD", cache: "no-store" }).catch(() => null);
+    const etag = h?.ok && h.headers.get("etag");
+    if (etag) return etag;
+    const t = await this.getText(path);
+    if (t == null) return null;
+    let x = 0x811c9dc5;
+    for (let i = 0; i < t.length; i++) { x ^= t.charCodeAt(i); x = Math.imul(x, 0x01000193); }
+    return `${t.length}:${(x >>> 0).toString(16)}`;
   }
   async put() { throw new Error("local source is read-only; records stay on this device until a GitHub repo is set"); }
   async check() {

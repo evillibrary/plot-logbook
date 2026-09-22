@@ -39,3 +39,32 @@ export function toast(msg, ms = 2500) {
   clearTimeout(t._t); t._t = setTimeout(() => { t.hidden = true; }, ms);
   return t;
 }
+
+// The grip on a bottom sheet is a real handle: drag it down to dismiss, or just tap it.
+// It looked like one long before it was one, and people kept pulling on it and giving up.
+// Hidden by CSS in the desktop side-panel layout, where pulling down means nothing.
+export function dragSheet(el, onClose) {
+  const grip = el.querySelector(".grip");
+  if (!grip) return;
+  let id = null, startY = 0, dy = 0, t0 = 0;
+  const release = () => { el.classList.remove("dragging"); el.style.transform = ""; };
+  grip.addEventListener("pointerdown", e => {
+    if (id !== null) return;
+    id = e.pointerId; startY = e.clientY; dy = 0; t0 = e.timeStamp;
+    grip.setPointerCapture(id);
+    el.classList.add("dragging");
+  });
+  grip.addEventListener("pointermove", e => {
+    if (e.pointerId !== id) return;
+    dy = Math.max(0, e.clientY - startY);                 // down only; up would tear it off the bottom
+    el.style.transform = `translateY(${dy}px)`;
+  });
+  grip.addEventListener("pointerup", e => {
+    if (e.pointerId !== id) return;
+    id = null;
+    const flicked = dy > 12 && e.timeStamp - t0 < 300, tapped = dy < 4;
+    release();                                            // same task as the close, so it animates on from here
+    if (dy > 70 || flicked || tapped) onClose();
+  });
+  grip.addEventListener("pointercancel", e => { if (e.pointerId === id) { id = null; release(); } });
+}

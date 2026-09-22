@@ -6,14 +6,14 @@ import { buildMap, toXY } from "./map.js";
 import { installTileLayer, tileManifest } from "./tiles.js";
 import * as events from "./events.js";
 import * as photos from "./photos.js";
-import { h, clear, toast, today } from "./ui/dom.js";
+import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
 import { renderFeature, renderList } from "./ui/sheet.js";
 import { CATEGORIES, iconSvg } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -41,12 +41,37 @@ const app = {
       plot = await this.source.getJson("features.json");
       if (!plot) throw new Error("features.json not found in the data source");
       await db.put("kv", plot, "plot");
+      await db.put("kv", await this.source.version("features.json").catch(() => null), "plotVersion");
     }
     if (!plot) return;
     this.plot = plot;
     this.proj = makeProjection({ lon_0: plot.crs?.lon_0 ?? 0, k: 1 });
     await this.refold();
     await this.buildMap();
+  },
+
+  // The survey in features.json is reference data, not the record, so a rebuilt copy can
+  // replace the cached one without asking. Until 0.2.1 a device kept whatever features.json
+  // it first loaded for ever: a build that moved features out of features[] left the events
+  // logged against them folding away unseen, on a map that was quietly weeks out of date.
+  busyWithSomething() {
+    return !!this.pickMode || this._formOpen
+      || $("feature-sheet").classList.contains("open")
+      || $("layers-sheet").classList.contains("open");
+  },
+
+  async checkPlot() {
+    if (!this.source || !this.plot) return false;
+    let remote;
+    try { remote = await this.source.version("features.json"); } catch { return false; }
+    if (!remote || remote === await db.get("kv", "plotVersion")) { this._plotStale = false; return false; }
+    if (this.busyWithSomething()) { this._plotStale = true; return false; }   // retry when they are done
+    this._plotStale = false;
+    const was = this.plot.generated;
+    await this.loadPlot(true);
+    const now = this.plot.generated;
+    toast(now && now !== was ? `Base data updated to ${now.slice(0, 10)}` : "Base data updated", 4000);
+    return true;
   },
 
   async installImagery(onProgress) {
@@ -102,6 +127,7 @@ const app = {
       try { sent = await events.push(this.source, this.ctx, status); up = await photos.uploadPending(this.source, status); }
       catch (e) { if (!/read-only/.test(e.message)) throw e; }
       if (got) { await this.refold(); this.render(); }
+      await this.checkPlot();
       const pending = (await db.unsynced()).length;
       this.setSyncPill(pending ? "pending" : "ok", pending ? `${pending} to send` : "synced");
       if (manual) toast(`sync: ${got} received, ${sent} sent, ${up} photos`);
@@ -145,7 +171,10 @@ const app = {
     $("layers-sheet").classList.remove("open");
     renderFeature(this, f);
   },
-  closeSheet() { $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false; },
+  closeSheet() {
+    $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false;
+    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+  },
   showForm(form) {
     this._formOpen = true;
     clear($("feature-body")).append(form);
@@ -201,6 +230,7 @@ const app = {
     this.mapApi.draw.cancel(); this.pickMode = null;
     $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").style.cursor = "";
     this.render();
+    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
   },
   async finishDraw() {
     const mode = this.pickMode, geom = this.mapApi.draw.finish();
@@ -256,6 +286,7 @@ async function boot() {
   // tabs, sheets, buttons
   for (const b of document.querySelectorAll("nav.tabs button")) b.addEventListener("click", () => app.showTab(b.dataset.tab));
   for (const b of document.querySelectorAll("[data-close]")) b.addEventListener("click", () => app.closeSheet());
+  for (const el of document.querySelectorAll(".sheet")) dragSheet(el, () => app.closeSheet());
   $("btn-layers").addEventListener("click", () => { $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.toggle("open"); });
   $("btn-locate").addEventListener("click", () => app.mapApi?.locate((lon, lat) => app.proj.forward(lon, lat)));
   $("btn-add").addEventListener("click", () => app.addMenu());

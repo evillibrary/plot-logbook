@@ -1,5 +1,5 @@
 // Offline shell. Cache-first for the app's own files; everything else (the data source) goes to the network.
-const VERSION = "plot-logbook-v0.2.0";
+const VERSION = "plot-logbook-v0.2.1";
 const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css",
   "vendor/leaflet/images/layers.png", "vendor/leaflet/images/layers-2x.png", "vendor/leaflet/images/marker-icon.png",
   "vendor/leaflet/images/marker-icon-2x.png", "vendor/leaflet/images/marker-shadow.png", "vendor/exifr.js", "vendor/fflate.js",

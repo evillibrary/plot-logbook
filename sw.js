@@ -1,5 +1,5 @@
 // Offline shell. Cache-first for the app's own files; everything else (the data source) goes to the network.
-const VERSION = "plot-logbook-v0.2.2";
+const VERSION = "plot-logbook-v0.2.3";
 const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css",
   "vendor/leaflet/images/layers.png", "vendor/leaflet/images/layers-2x.png", "vendor/leaflet/images/marker-icon.png",
   "vendor/leaflet/images/marker-icon-2x.png", "vendor/leaflet/images/marker-shadow.png", "vendor/exifr.js", "vendor/fflate.js",
@@ -7,7 +7,13 @@ const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "vendor/leafl
   "js/ui/dom.js", "js/ui/forms.js", "js/ui/sheet.js", "js/ui/views.js", "js/ui/more.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: "reload" is load-bearing. Pages serves the shell with max-age=600, so a plain
+  // addAll is answered from the browser's own HTTP cache and fills the NEW version's cache
+  // with the OLD files — which are then served cache-first for ever. That, not the worker
+  // handover, is what made an update take two opens.
+  e.waitUntil(caches.open(VERSION)
+    .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: "reload" }))))
+    .then(() => self.skipWaiting()));
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));

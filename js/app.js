@@ -13,7 +13,7 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const $ = id => document.getElementById(id);
 
 const app = {

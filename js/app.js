@@ -13,7 +13,7 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 
-const VERSION = "0.2.6";
+const VERSION = "0.2.7";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -69,7 +69,23 @@ const app = {
       return;
     }
     this._reloading = true;
+    this.saveView();
     location.reload();
+  },
+
+  // The self-reload lands about eight seconds after opening, often after the map has been
+  // panned: carry the view (and the tab) across it rather than snapping back to the home view.
+  saveView() {
+    if (!this.mapApi) return;
+    const c = this.mapApi.map.getCenter();
+    try { sessionStorage.setItem("pl:view", JSON.stringify({ c: [c.lat, c.lng], z: this.mapApi.map.getZoom(), tab: this.tab, t: Date.now() })); } catch {}
+  },
+  restoreView() {
+    let v = null;
+    try { v = JSON.parse(sessionStorage.getItem("pl:view")); sessionStorage.removeItem("pl:view"); } catch {}
+    if (!v || Date.now() - v.t > 60000 || !this.mapApi) return;
+    this.mapApi.map.setView(v.c, v.z, { animate: false });
+    if (v.tab && v.tab !== "map") this.showTab(v.tab);
   },
 
   async checkPlot() {
@@ -181,22 +197,26 @@ const app = {
     this.render();
     if (name === "map") this.mapApi?.map.invalidateSize();
   },
-  openSheet(f) {
-    this.selected = f; this._formOpen = false;
+  openSheet(f, { fromList = false } = {}) {
+    this.selected = f; this._formOpen = false; this._listShown = false; this._fromList = fromList;
     $("layers-sheet").classList.remove("open");
+    $("feature-sheet").scrollTop = 0;
     renderFeature(this, f);
   },
   closeSheet() {
-    $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false;
+    $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false; this._listShown = false;
+    // leaving a feature opened from the list another way: drop the history entry that back would have used
+    if (this._fromList) { this._fromList = false; if (history.state?.pl === "list") history.back(); }
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
     this.applyUpdate();
   },
   showForm(form) {
-    this._formOpen = true;
+    this._formOpen = true; this._listShown = false;
     clear($("feature-body")).append(form);
     $("layers-sheet").classList.remove("open");
     $("feature-sheet").classList.add("open");
-    setTimeout(() => form.querySelector?.("input:not([type=file]), textarea, select")?.focus({ preventScroll: true }), 220);
+    $("feature-sheet").scrollTop = 0;
+    if (form.dataset?.autofocus !== "off") setTimeout(() => form.querySelector?.("input:not([type=file]), textarea, select")?.focus({ preventScroll: true }), 220);
   },
   done() {
     this._formOpen = false;
@@ -205,12 +225,32 @@ const app = {
     this.render();
   },
   showPhoto(p) { this.showForm(photoViewer(this, p)); },
-  goTo(fid) {
+  goTo(fid, opts = {}) {
     const f = this.state.features.get(fid); if (!f) return;
     this.showTab("map");
     const layer = this.mapApi.byId.get(fid);
     if (layer) { const c = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter(); this.mapApi.map.setView(c, Math.max(this.mapApi.map.getZoom(), 1.5)); }
-    this.openSheet(f);
+    this.openSheet(f, opts);
+  },
+
+  // --- the list and the way back to it ---
+  // A result opens its feature with a history entry under it, so the phone's own back gesture
+  // (and the browser's back button) return to the list as it was left, as does "‹ Back to list".
+  showList(restore = false) {
+    this.showForm(renderList(this, restore));
+    this._listShown = true; this._fromList = false;
+    if (restore) $("feature-sheet").scrollTop = this.listState?.scroll ?? 0;
+  },
+  fromList(f, snapshot) {
+    this.listState = snapshot;
+    history.pushState({ pl: "list" }, "");
+    f.geom ? this.goTo(f.id, { fromList: true }) : this.openSheet(f, { fromList: true });
+  },
+  backToList() { history.state?.pl === "list" ? history.back() : this.showList(true); },
+  onPopState() {
+    if (!this._fromList) return;                                     // a stale entry: its sheet is already gone
+    if (this._formOpen && !this._listShown) { history.pushState({ pl: "list" }, ""); toast("Save or cancel first"); return; }
+    this.showList(true);
   },
 
   // --- delete with a way back ---
@@ -253,7 +293,7 @@ const app = {
   startRedraw(f) { this.startDraw(f.geom.type === "Polygon" ? "area" : "line", { feature: f }); },
   refreshDrawBar() {
     const d = this.mapApi.draw, gps = this.lastGps;
-    $("draw-summary").textContent = `· ${d.count()} point${d.count() === 1 ? "" : "s"} · ${d.summary()}`;
+    $("draw-summary").textContent = `· ${d.count()} point${d.count() === 1 ? "" : "s"}${d.gpsCount() ? ` (${d.gpsCount()} by GPS)` : ""} · ${d.summary()}`;
     $("draw-gps").disabled = !gps; $("draw-gps").title = gps ? `±${Math.round(gps.acc)} m` : "turn on ◎ first";
     $("draw-undo").disabled = !d.count();
     $("draw-finish").disabled = d.count() < (this.pickMode?.type === "area" ? 3 : 2);
@@ -264,19 +304,21 @@ const app = {
     this.render();
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
     this.applyUpdate();
-    this.applyUpdate();
   },
+  // A line walked with "Point at GPS" is phone-GPS evidence (±5–10 m), not a trace off the
+  // imagery, and is recorded as such: source phone-gps, confidence defaulting to low.
   async finishDraw() {
-    const mode = this.pickMode, geom = this.mapApi.draw.finish();
+    const mode = this.pickMode, d = this.mapApi.draw, points = d.count(), gpsPoints = d.gpsCount();
+    const geom = d.finish();
     if (!geom) return;
     if (mode.feature) {
       const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
-      await this.record({ op: "feature.move", feature: mode.feature.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence: "medium" });
+      await this.record({ op: "feature.move", feature: mode.feature.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence: gpsPoints ? "low" : "medium" });
       this.endDraw(); toast(`${mode.feature.name} redrawn`);
     } else {
       const type = mode.type;
       this.endDraw();
-      this.showForm(featureForm(this, geom, { type: type === "line" ? "fences" : "paddocks" }));
+      this.showForm(featureForm(this, geom, { type: type === "line" ? "fences" : "paddocks", points, gpsPoints }));
     }
   },
   async onMapClick(xy) {
@@ -292,7 +334,6 @@ const app = {
       this.showForm(featureForm(this, { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)] }, mode.type ? { type: mode.type } : {}));
     }
   },
-  showList() { this.showForm(renderList(this)); },
   addMenu() {
     const gps = this.lastGps;
     const item = (label, fn) => h("button.btn", { style: { display: "block", width: "100%", textAlign: "left", marginBottom: "8px" }, onclick: fn }, label);
@@ -324,7 +365,7 @@ async function boot() {
   $("btn-locate").addEventListener("click", () => app.mapApi?.locate((lon, lat) => app.proj.forward(lon, lat)));
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
-  $("draw-gps").addEventListener("click", () => { if (app.lastGps) { app.mapApi.draw.add(app.lastGps.xy.map(v => +v.toFixed(2))); app.refreshDrawBar(); } });
+  $("draw-gps").addEventListener("click", () => { if (app.lastGps) { app.mapApi.draw.add(app.lastGps.xy.map(v => +v.toFixed(2)), true); app.refreshDrawBar(); } });
   $("draw-undo").addEventListener("click", () => { app.mapApi.draw.undo(); app.refreshDrawBar(); });
   $("draw-finish").addEventListener("click", () => app.finishDraw());
   $("draw-cancel").addEventListener("click", () => app.endDraw());
@@ -349,6 +390,7 @@ async function boot() {
     d.open = app.settings.layerGroups?.[d.id] ?? true;
     d.addEventListener("toggle", () => { app.settings.layerGroups = { ...app.settings.layerGroups, [d.id]: d.open }; app.saveSettings(); });
   }
+  window.addEventListener("popstate", () => app.onPopState());
   window.addEventListener("online", () => app.sync());
   window.addEventListener("offline", () => app.setSyncPill("pending", "offline"));
 
@@ -361,6 +403,7 @@ async function boot() {
     if (app.source) { try { await app.connect(); app.showTab("map"); } catch (e) { toast(e.message, 5000); } }
   } else {
     app.render();
+    app.restoreView();
     app.setSyncPill(app.source ? "pending" : "", app.source ? (navigator.onLine ? "…" : "offline") : "no source");
     app.sync();
   }

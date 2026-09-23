@@ -1,7 +1,7 @@
 // State derivation from the event log. Run: node --test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fold, addDuration } from "../js/events.js";
+import { fold, addDuration, mergeRows } from "../js/events.js";
 
 const plot = { features: [
   { id: "K1", name: "Avocado", type: "planting", confidence: "low", geom: { type: "Point", xy: [10, 10], ll: [23, -33] } },
@@ -87,7 +87,7 @@ test("photos and observations land on their feature's timeline, newest first", (
   assert.equal(s.obs.length, 1);
 });
 
-test("unknown ops and events for unknown targets are ignored, not fatal", () => {
+test("unknown ops and events for unknown targets are not fatal", () => {
   const s = fold(plot, [
     ev("2026-09-10T10:00:00+02:00", "fly", {}),
     ev("2026-09-10T10:00:00+02:00", "job.done", { job: "nope" }),
@@ -95,6 +95,46 @@ test("unknown ops and events for unknown targets are ignored, not fatal", () => 
   ]);
   assert.equal(s.features.size, 2);
   assert.equal(s.jobs.size, 0);
+});
+
+test("records about a feature the map does not have are kept in dropped, in time order, not swallowed", () => {
+  const s = fold(plot, [
+    ev("2026-09-12T10:00:00+02:00", "observe", { feature: "gone", kind: "note", text: "x", photos: [] }),
+    ev("2026-09-10T10:00:00+02:00", "feature.move", { feature: "beacon", geom: { type: "Point", xy: [1, 1] } }),
+    ev("2026-09-11T10:00:00+02:00", "feature.retire", { feature: "beacon", note: "" }),
+    ev("2026-09-11T11:00:00+02:00", "water", { source: "feature", feature: "gone", value: 1, unit: "m3" }),
+    ev("2026-09-11T12:00:00+02:00", "feature.move", { feature: "K1", geom: { type: "Point", xy: [2, 2] } }),
+    ev("2026-09-11T13:00:00+02:00", "observe", { feature: null, kind: "note", text: "general", photos: [] }),
+  ]);
+  assert.deepEqual(s.dropped.map(e => `${e.op}:${e.feature}`),
+    ["feature.move:beacon", "feature.retire:beacon", "water:gone", "observe:gone"]);
+  assert.deepEqual(s.features.get("K1").geom.xy, [2, 2], "a known feature still folds");
+  assert.equal(s.features.has("beacon"), false, "a dropped move does not invent a feature");
+});
+
+test("a move logged before its feature was added (clock skew between phones) is dropped, not misapplied", () => {
+  const s = fold(plot, [
+    ev("2026-09-10T10:00:00+02:00", "feature.move", { feature: "f_9", geom: { type: "Point", xy: [9, 9] } }),
+    ev("2026-09-10T10:05:00+02:00", "feature.add", { feature: "f_9", name: "Fig", type: "trees", geom: { type: "Point", xy: [1, 1] } }),
+  ]);
+  assert.deepEqual(s.features.get("f_9").geom.xy, [1, 1]);
+  assert.equal(s.dropped.length, 1);
+});
+
+test("a push can only grow a log file: lines the device has lost are merged back in", () => {
+  const remote = [
+    { id: "01A", ts: "2026-09-01T10:00:00+02:00", op: "observe" },
+    { id: "01B", ts: "2026-09-02T10:00:00+02:00", op: "observe" },
+  ].map(r => JSON.stringify(r)).join("\n") + "\n";
+  const local = [
+    { id: "01C", ts: "2026-09-03T10:00:00+02:00", op: "observe", synced: 0 },
+    { id: "01B", ts: "2026-09-02T10:00:00+02:00", op: "observe", synced: 1 },
+  ];
+  const { rows, restored } = mergeRows(local, remote);
+  assert.deepEqual(rows.map(r => r.id), ["01A", "01B", "01C"], "sorted by id, nothing lost");
+  assert.deepEqual(restored.map(r => r.id), ["01A"]);
+  assert.equal(rows.find(r => r.id === "01C").synced, 0, "local rows keep their sync state");
+  assert.deepEqual(mergeRows(local, null).rows.map(r => r.id), ["01B", "01C"], "a new month file has no remote");
 });
 
 test("addDuration handles days, weeks, months, years", () => {

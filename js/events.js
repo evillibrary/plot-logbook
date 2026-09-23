@@ -27,12 +27,15 @@ export async function append(ev, ctx) {
 export const allEvents = () => db.all("events");
 
 // --- fold to state ---
+// Records about a feature this map does not have are kept in `dropped`, not swallowed: that
+// is how moves logged against a stale features.json went unseen for days.
 export function fold(plot, events) {
   const features = new Map();
   for (const f of plot.features) features.set(f.id, { ...f, origin: "kml" });
-  const obs = [], jobs = new Map(), water = [], photos = new Map();
+  const obs = [], jobs = new Map(), water = [], photos = new Map(), dropped = [];
   const sorted = [...events].sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1);
   for (const e of sorted) {
+    if (String(e.op).startsWith("feature.") && e.op !== "feature.add" && !features.has(e.feature)) { dropped.push(e); continue; }
     switch (e.op) {
       case "observe": obs.push(e); break;
       case "photo": photos.set(e.photo, { ...e }); break;
@@ -48,14 +51,17 @@ export function fold(plot, events) {
       }
       case "job.delete": jobs.delete(e.job); break;
       case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by }); break;
-      case "feature.move": if (features.has(e.feature)) { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; } break;
-      case "feature.edit": if (features.has(e.feature)) Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
-      case "feature.retire": if (features.has(e.feature)) { features.get(e.feature).retired = e.ts; features.get(e.feature).retireNote = e.note ?? ""; } break;
-      case "feature.unretire": if (features.has(e.feature)) { const f = features.get(e.feature); delete f.retired; delete f.retireNote; } break;
-      case "feature.delete": if (features.has(e.feature)) { features.get(e.feature).deleted = e.ts; features.get(e.feature).deletedBy = e.by; } break;
-      case "feature.undelete": if (features.has(e.feature)) { const f = features.get(e.feature); delete f.deleted; delete f.deletedBy; } break;
+      case "feature.move": { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; break; }
+      case "feature.edit": Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
+      case "feature.retire": { const f = features.get(e.feature); f.retired = e.ts; f.retireNote = e.note ?? ""; break; }
+      case "feature.unretire": { const f = features.get(e.feature); delete f.retired; delete f.retireNote; break; }
+      case "feature.delete": { const f = features.get(e.feature); f.deleted = e.ts; f.deletedBy = e.by; break; }
+      case "feature.undelete": { const f = features.get(e.feature); delete f.deleted; delete f.deletedBy; break; }
     }
   }
+  // a note or reading against a feature that never existed has no sheet to appear on
+  for (const e of [...obs, ...water]) if (e.feature && !features.has(e.feature)) dropped.push(e);
+  dropped.sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1);
   const byFeature = new Map();
   const add = (fid, kind, item) => { if (!fid) return; (byFeature.get(fid) ?? byFeature.set(fid, []).get(fid)).push({ kind, ts: item.ts ?? item.taken, item }); };
   for (const o of obs) add(o.feature, "observe", o);
@@ -63,7 +69,7 @@ export function fold(plot, events) {
   for (const p of photos.values()) add(p.feature, "photo", { ...p, ts: p.taken || p.ts });
   for (const j of jobs.values()) { add(j.feature, "job", { ...j, ts: j.created }); for (const h of j.history) add(j.feature, "job.done", { ...j, ts: h.ts, by: h.by }); }
   for (const list of byFeature.values()) list.sort((a, b) => a.ts < b.ts ? 1 : -1);
-  return { features, obs, jobs, water, photos, byFeature };
+  return { features, obs, jobs, water, photos, byFeature, dropped };
 }
 
 // ISO 8601 durations: P7D, P2W, P1M, P3M, P1Y
@@ -80,19 +86,34 @@ export function addDuration(dateStr, dur) {
 // --- sync with the data source ---
 const line = e => { const { synced, ...rest } = e; return JSON.stringify(rest); };
 
+// A push rewrites the device's whole month file, so it must never write fewer lines than are
+// already there: whatever the remote file holds that this device has lost goes back in.
+// Pulling first normally makes that a no-op; this makes it a guarantee.
+export function mergeRows(local, remoteText) {
+  const byId = new Map();
+  const remote = (remoteText ?? "").split("\n").filter(Boolean).map(l => JSON.parse(l));
+  for (const r of remote) byId.set(r.id, r);
+  const known = new Set(local.map(e => e.id));
+  const restored = remote.filter(r => !known.has(r.id));
+  for (const e of local) byId.set(e.id, e);
+  return { rows: [...byId.values()].sort((a, b) => a.id < b.id ? -1 : 1), restored };
+}
+
 export async function push(source, ctx, onStatus) {
   const pending = await db.unsynced();
   if (!pending.length) return 0;
+  if (source.readOnly) throw new Error("local source is read-only; records stay on this device until a GitHub repo is set");
   const mine = pending.filter(e => e.device === ctx.device);
   const files = new Set(mine.map(e => `log/${e.device}/${month(e.ts)}.jsonl`));
   const all = (await db.all("events")).filter(e => e.device === ctx.device);
   let n = 0;
   for (const path of files) {
     const [, dev, mon] = path.match(/^log\/(.+)\/(\d{4}-\d{2})\.jsonl$/);
-    const rows = all.filter(e => e.device === dev && month(e.ts) === mon).sort((a, b) => a.id < b.id ? -1 : 1);
+    const { rows, restored } = mergeRows(all.filter(e => e.device === dev && month(e.ts) === mon), await source.getText(path));
+    if (restored.length) await db.putManyKeyed("events", restored.map(r => ({ ...r, synced: 1 })));
     onStatus?.(`uploading ${path}`);
     await source.put(path, rows.map(line).join("\n") + "\n", `log: ${rows.length} events from ${dev} (${mon})`);
-    const done = rows.filter(e => !e.synced).map(e => ({ ...e, synced: 1 }));
+    const done = rows.filter(e => e.synced === 0).map(e => ({ ...e, synced: 1 }));
     await db.putManyKeyed("events", done);
     n += done.length;
   }

@@ -43,10 +43,34 @@ export function renderMore(app) {
     (() => { const del = [...app.state.features.values()].filter(f => f.deleted); return del.length ? h("div.card", h("h3", `Deleted features (${del.length})`),
       ...del.map(f => h("div.row", { style: { justifyContent: "space-between", padding: "4px 0" } }, h("span", `${f.name} `, h("span.note", `${catOf(f).name} · ${f.deleted.slice(0, 10)} by ${f.deletedBy ?? ""}`)),
         h("button.btn", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast(`${f.name} restored`); } }, "Restore")))) : null; })(),
+    notShown(app),
     h("div.card", h("h3", "Danger zone"),
       h("p.note", "Records not yet synced would be lost."),
       h("button.btn.danger", { onclick: async () => { if (confirm("Clear everything stored on this device?")) { for (const st of ["kv", "tiles", "events", "photos"]) await db.clear(st); location.reload(); } } }, "Clear local data")),
     h("p.note", `Plot Logbook ${app.version}`),
   ].filter(Boolean));
   app.updateSyncSummary();
+}
+
+// Records the fold could not attach to anything on this map: say so, grouped, rather than
+// letting them vanish. Survey beacons and boundary lines are overlays, not editable features,
+// so a record against one usually comes from a device holding an old features.json.
+const WHAT = { "feature.move": ["move", "moves"], "feature.edit": ["edit", "edits"], "feature.retire": ["retirement", "retirements"],
+  "feature.unretire": ["unretirement", "unretirements"], "feature.delete": ["delete", "deletes"], "feature.undelete": ["restore", "restores"],
+  observe: ["note", "notes"], water: ["reading", "readings"] };
+function notShown(app) {
+  const dropped = app.state?.dropped ?? [];
+  if (!dropped.length) return null;
+  const overlays = new Map((app.plot?.boundaries ?? []).map(b => [b.id, b]));
+  const groups = new Map();
+  for (const e of dropped) { const k = `${e.feature}|${e.op}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(e); }
+  const uniq = xs => [...new Set(xs)].join(", ");
+  return h("div.card", h("h3", `Records not shown (${dropped.length})`),
+    h("p.note", "These refer to features this map does not have. They stay in the log; nothing is lost."),
+    ...[...groups.values()].map(list => {
+      const e = list[0], b = overlays.get(e.feature), [one, many] = WHAT[e.op] ?? [e.op, e.op];
+      const target = b ? `${b.name} (${b.type === "beacon" ? "a survey beacon" : "a boundary line"}, not editable in the app)` : e.feature;
+      return h("div", { style: { padding: "4px 0" } }, `${list.length} ${list.length === 1 ? one : many} of ${target}`,
+        h("div.note", `${uniq(list.map(x => x.ts.slice(0, 10)))} · ${uniq(list.map(x => x.by))}`));
+    }));
 }

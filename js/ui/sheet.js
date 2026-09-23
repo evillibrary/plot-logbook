@@ -6,7 +6,7 @@ import * as photos from "../photos.js";
 import { CATEGORIES, CAT, catOf, iconSvg } from "../categories.js";
 import { describeGeom } from "../geo.js";
 
-const CONF_LABEL = { high: "position: high", medium: "position: medium", low: "position: low — check and move" };
+const confLabel = (c, point) => ({ high: "position: high", medium: "position: medium", low: `position: low — check and ${point ? "move" : "redraw"}` })[c] ?? c;
 const ico = (cat, size = 26) => { const d = h("span.ic"); d.innerHTML = iconSvg(cat, size); return d; };
 
 export function renderFeature(app, f) {
@@ -16,7 +16,9 @@ export function renderFeature(app, f) {
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
     f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
-    f.geom?.type === "Point" && f.confidence && h(`span.chip.${{ high: "hi", medium: "md", low: "lo" }[f.confidence] ?? ""}`, CONF_LABEL[f.confidence] ?? f.confidence),
+    // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked
+    f.geom && f.confidence && (f.geom.type === "Point" || f.confidence === "low")
+      && h(`span.chip.${{ high: "hi", medium: "md", low: "lo" }[f.confidence] ?? ""}`, confLabel(f.confidence, f.geom.type === "Point")),
     f.origin === "app" && h("span.chip", `added ${f.since?.slice(0, 10)} by ${f.by ?? ""}`),
     f.retired && h("span.chip.lo", `retired ${f.retired.slice(0, 10)}`),
     f.deleted && h("span.chip.lo", `deleted ${f.deleted.slice(0, 10)}`));
@@ -55,6 +57,7 @@ export function renderFeature(app, f) {
         h("button", { style: { color: "var(--danger)" }, onclick: () => app.deleteFeature(f, attached) }, "🗑 Delete")));
 
   body.append(...[
+    app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
     h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(cat), f.name), chips,
     f.description && h("p.desc", f.description),
     f.origin === "kml" && f.photos?.length && !photoItems.length ? h("p.note", `Survey photos: ${f.photos.join(", ")}`) : null,
@@ -65,37 +68,43 @@ export function renderFeature(app, f) {
   document.getElementById("feature-sheet").classList.add("open");
 }
 
-// Searchable list grouped by category; the home of pets and livestock.
-export function renderList(app) {
-  const search = h("input.list-search", { placeholder: "Find a feature…", autocomplete: "off" });
+// Searchable list grouped by category; the home of pets and livestock. The magnifier opens it
+// fresh; coming back from a feature opened here restores it as it was left — query, open
+// groups and scroll (app.listState). No autofocus: on a phone that throws the keyboard over
+// the list, and the list is what you came for.
+export function renderList(app, restore = false) {
+  const st = restore ? app.listState : null;
+  const search = h("input.list-search", { placeholder: "Find a feature…", autocomplete: "off", value: st?.q ?? "" });
   const listEl = h("div");
+  let asLeft = st ? new Set(st.open) : null;          // which groups to open, until the query changes
+  const snapshot = () => ({ q: search.value, open: [...listEl.querySelectorAll("details.grp[open]")].map(d => d.dataset.key),
+    scroll: document.getElementById("feature-sheet").scrollTop });
   const draw = () => {
     clear(listEl);
     const q = search.value.trim().toLowerCase();
     const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q));
     // Collapsed until you ask: thirty-odd features in one scroll is no way to find anything,
     // and a typed query opens whatever it matched.
-    const group = (title, colour, rows, open) => {
-      const d = h("details.grp", { open });
+    const group = (key, title, colour, rows, open) => {
+      const d = h("details.grp", { open: asLeft ? asLeft.has(key) : open, dataset: { key } });
       d.append(h("summary", { style: { color: colour } }, `${title} (${rows.length})`), ...rows);
       listEl.append(d);
     };
     for (const c of CATEGORIES) {
       const items = all.filter(f => f.type === c.id);
       if (!items.length) continue;
-      group(c.name, c.color, items.map(f => {
+      group(c.id, c.name, c.color, items.map(f => {
         const n = (app.state.byFeature.get(f.id) ?? []).length;
-        return h("div.list-item", { onclick: () => f.geom ? app.goTo(f.id) : app.openSheet(f) }, ico(c),
+        return h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(c),
           h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
       }), !!q);
     }
     const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted);
-    if (retired.length && !q) group("Retired", "var(--muted)", retired.map(f =>
-      h("div.list-item", { onclick: () => app.openSheet(f) }, ico(catOf(f)),
+    if (retired.length && !q) group("retired", "Retired", "var(--muted)", retired.map(f =>
+      h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(catOf(f)),
         h("div", f.name, h("div.meta", `retired ${f.retired.slice(0, 10)} ${f.retireNote ?? ""}`)))), false);
   };
-  search.addEventListener("input", draw);
+  search.addEventListener("input", () => { asLeft = null; draw(); });
   draw();
-  setTimeout(() => search.focus(), 100);
-  return h("div", h("h2", "Features"), search, listEl);
+  return h("div", { dataset: { autofocus: "off" } }, h("h2", "Features"), search, listEl);
 }

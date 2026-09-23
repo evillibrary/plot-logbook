@@ -143,14 +143,16 @@ export function buildMap(container, plot, grid, opts = {}) {
   }
 
   // --- drawing a line or an area: vertices in, preview shown, geometry out ---
-  const drawing = { type: null, pts: [], shape: null, dots: [] };
+  // Each vertex remembers whether it was a tap or a GPS fix (blue, like the locate dot), so
+  // the finished feature can say how it was measured.
+  const drawing = { type: null, pts: [], gps: [], shape: null, dots: [] };
   function startDraw(type) { cancelDraw(); drawing.type = type; }
-  function addVertex(xy) {
-    drawing.pts.push(xy);
-    drawing.dots.push(L.circleMarker(ll(xy), { radius: 5, color: "#fff", weight: 2, fillColor: "#e0392b", fillOpacity: 1, interactive: false }).addTo(map));
+  function addVertex(xy, fromGps = false) {
+    drawing.pts.push(xy); drawing.gps.push(fromGps);
+    drawing.dots.push(L.circleMarker(ll(xy), { radius: 5, color: "#fff", weight: 2, fillColor: fromGps ? "#1a73e8" : "#e0392b", fillOpacity: 1, interactive: false }).addTo(map));
     refreshDraw();
   }
-  function undoVertex() { drawing.pts.pop(); drawing.dots.pop()?.remove(); refreshDraw(); }
+  function undoVertex() { drawing.pts.pop(); drawing.gps.pop(); drawing.dots.pop()?.remove(); refreshDraw(); }
   function refreshDraw() {
     drawing.shape?.remove(); drawing.shape = null;
     const p = drawing.pts;
@@ -170,12 +172,12 @@ export function buildMap(container, plot, grid, opts = {}) {
     if (type === "area") return p.length >= 3 ? { type: "Polygon", xy: [...p, p[0]] } : null;
     return p.length >= 2 ? { type: "LineString", xy: p } : null;
   }
-  function cancelDraw() { drawing.shape?.remove(); for (const d of drawing.dots) d.remove(); Object.assign(drawing, { type: null, pts: [], shape: null, dots: [] }); }
+  function cancelDraw() { drawing.shape?.remove(); for (const d of drawing.dots) d.remove(); Object.assign(drawing, { type: null, pts: [], gps: [], shape: null, dots: [] }); }
 
   const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
 
   return { map, groups, byId, overlays, setImagery, locate, home, ll, center,
-    draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length, active: () => !!drawing.type } };
+    draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length, gpsCount: () => drawing.gps.filter(Boolean).length, active: () => !!drawing.type } };
 }

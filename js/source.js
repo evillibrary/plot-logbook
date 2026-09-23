@@ -94,7 +94,7 @@ export class GitHubSource {
 }
 
 export class HttpSource {
-  constructor({ baseUrl }) { this.base = baseUrl.replace(/\/?$/, "/"); this.name = this.base; }
+  constructor({ baseUrl }) { this.base = baseUrl.replace(/\/?$/, "/"); this.name = this.base; this.readOnly = true; }
   async fetch(path) {
     const r = await fetch(this.base + path, { cache: "no-store" });
     if (r.status === 404) return null;

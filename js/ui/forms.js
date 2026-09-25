@@ -118,6 +118,13 @@ export function waterForm(app, feature) {
 
 const CONFIDENCE = [["low", "low — phone GPS"], ["medium", "medium — checked against the map"], ["high", "high — exactly here"]];
 
+// A plan (the shed not yet built, a fence line being tried out) goes in the same record as the
+// real farm, so it has to say so, or in a month nobody knows which is which.
+function plannedBox(checked) {
+  const input = h("input", { type: "checkbox", checked });
+  return { input, el: h("label.check", input, "Planned — not built yet") };
+}
+
 // New feature: geom is {type, xy} in plot metres (ll added here), or null for pets/livestock.
 // opts.viaGps: a point at the GPS position; opts.gpsPoints/points: how many of a drawn line's
 // or area's vertices were GPS fixes rather than taps.
@@ -129,6 +136,8 @@ export function featureForm(app, geom, opts = {}) {
   const conf = select(CONFIDENCE, fromGps ? "low" : "medium");
   const how = opts.viaGps ? " (from GPS)" : opts.gpsPoints ? ` (${opts.gpsPoints === opts.points ? "every point" : `${opts.gpsPoints} of ${opts.points} points`} by GPS)` : "";
   const desc = h("textarea", { rows: 2, placeholder: kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
+  const planned = geom ? plannedBox(false) : null;
+  const at = geom?.type === "Point" ? app.gridAt(geom.xy) : null;
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
     let g = null;
@@ -136,12 +145,13 @@ export function featureForm(app, geom, opts = {}) {
       const toLL = xy => app.unproject(xy).map(v => +v.toFixed(7));
       g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.xy.map(toLL) };
     }
-    await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g });
+    await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
+      ...(planned?.input.checked ? { planned: true } : {}) });
     toast(`${name.value.trim()} added`); app.done(form);
   } },
     h("h2", kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
-    geom && h("p.note", `${describeGeom(geom)}${how}`),
-    field("Name", name), field("Category", type), geom ? field("Position confidence", conf) : null, field("Description", desc),
+    geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
+    field("Name", name), field("Category", type), planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Add"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }
@@ -151,14 +161,16 @@ export function editForm(app, f) {
   const name = h("input", { value: f.name, required: true }), type = catSelect(kind, f.type);
   const desc = h("textarea", { rows: 3, value: f.description ?? "" });
   const conf = f.geom ? select(CONFIDENCE, CONFIDENCE.some(([v]) => v === f.confidence) ? f.confidence : "medium") : null;
+  const planned = f.geom || f.planned ? plannedBox(!!f.planned) : null;
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
     const changes = { name: name.value.trim(), type: type.value, description: desc.value.trim() };
     if (conf && conf.value !== f.confidence) changes.confidence = conf.value;
+    if (planned && planned.input.checked !== !!f.planned) changes.planned = planned.input.checked;
     await app.record({ op: "feature.edit", feature: f.id, changes });
     toast("saved"); app.done(form);
   } },
-    h("h2", `Edit ${f.name}`), field("Name", name), field("Category", type), conf && field("Position confidence", conf), field("Description", desc),
+    h("h2", `Edit ${f.name}`), field("Name", name), field("Category", type), planned?.el, conf && field("Position confidence", conf), field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Save"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }

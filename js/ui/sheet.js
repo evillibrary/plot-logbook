@@ -16,8 +16,10 @@ export function renderFeature(app, f) {
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
     f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
-    // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked
-    f.geom && f.confidence && (f.geom.type === "Point" || f.confidence === "low")
+    f.planned && h("span.chip.plan", "planned, not built yet"),
+    // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked.
+    // A plan has no measured position to be confident about.
+    !f.planned && f.geom && f.confidence && (f.geom.type === "Point" || f.confidence === "low")
       && h(`span.chip.${{ high: "hi", medium: "md", low: "lo" }[f.confidence] ?? ""}`, confLabel(f.confidence, f.geom.type === "Point")),
     f.origin === "app" && h("span.chip", `added ${f.since?.slice(0, 10)} by ${f.by ?? ""}`),
     f.retired && h("span.chip.lo", `retired ${f.retired.slice(0, 10)}`),
@@ -48,6 +50,7 @@ export function renderFeature(app, f) {
         h("button", { onclick: () => app.showForm(jobForm(app, f)) }, "☑ Job"),
         f.type === "water" ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, "💧 Reading") : h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit")),
       h("div.actions",
+        f.planned && !f.retired && h("button.primary", { onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: false } }); toast(`${f.name} marked as built`); } }, "✓ Built"),
         f.type === "water" && h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit"),
         !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
         f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
@@ -59,6 +62,7 @@ export function renderFeature(app, f) {
   body.append(...[
     app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
     h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(cat), f.name), chips,
+    f.geom?.type === "Point" && app.gridAt(f.geom.xy) && h("p.note.grid-at", `📐 ${app.gridAt(f.geom.xy)}`),
     f.description && h("p.desc", f.description),
     f.origin === "kml" && f.photos?.length && !photoItems.length ? h("p.note", `Survey photos: ${f.photos.join(", ")}`) : null,
     actions,
@@ -96,7 +100,7 @@ export function renderList(app, restore = false) {
       group(c.id, c.name, c.color, items.map(f => {
         const n = (app.state.byFeature.get(f.id) ?? []).length;
         return h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(c),
-          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
+          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${f.planned ? "planned · " : ""}${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
       }), !!q);
     }
     const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted);

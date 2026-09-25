@@ -3,24 +3,36 @@
 import { IdbTileLayer } from "./tiles.js";
 import { CATEGORIES, catOf, iconSvg } from "./categories.js";
 import { lineLength, polygonArea, fmtLength, fmtArea, centroid, interiorPoint } from "./geo.js";
+import { gridFrame, gridExtent, gridLevels, gridLines, clipStart, snapToGrid, gridLabel } from "./grid.js";
 
 const ll = xy => L.latLng(xy[1], xy[0]);           // [E, N] -> Leaflet latlng (lat = N, lng = E)
 const lls = xys => xys.map(ll);
 export const toXY = latlng => [latlng.lng, latlng.lat];
 
 const ICONS = {};
-const iconFor = (cat, size = 28) => (ICONS[`${cat.id}:${size}`] ??= L.divIcon({
-  className: "feat-icon", html: iconSvg(cat, size), iconSize: [size, size],
+const iconFor = (cat, size = 28, planned = false) => (ICONS[`${cat.id}:${size}:${planned}`] ??= L.divIcon({
+  className: planned ? "feat-icon planned" : "feat-icon", html: iconSvg(cat, size), iconSize: [size, size],
   iconAnchor: [size / 2, size / 2], tooltipAnchor: [size / 2, 0] }));
 
-export function buildMap(container, plot, grid, opts = {}) {
-  const [oe, on] = grid.origin, m0 = grid.m_per_px_zoom0;
+// The planning grid's lines: fine, and dark on the drawn plan but light over imagery.
+const GRID_STYLE = {
+  plan: { minor: { color: "#2b2a22", opacity: 0.2, weight: 0.8 }, major: { color: "#2b2a22", opacity: 0.38, weight: 1.3 } },
+  ortho: { minor: { color: "#ffffff", opacity: 0.45, weight: 0.8 }, major: { color: "#ffffff", opacity: 0.75, weight: 1.3 } },
+};
+
+// tiling: the imagery's pixel grid (origin, metres per pixel at zoom 0), which fixes the CRS.
+export function buildMap(container, plot, tiling, opts = {}) {
+  const [oe, on] = tiling.origin, m0 = tiling.m_per_px_zoom0;
   const crs = L.extend({}, L.CRS.Simple, {
     transformation: new L.Transformation(1 / m0, -oe / m0, -1 / m0, on / m0),
   });
   const map = L.map(container, { crs, zoomSnap: 0, zoomDelta: 0.5, minZoom: -2, maxZoom: 4.5, attributionControl: false, zoomControl: false });
   L.control.zoom({ position: "bottomleft" }).addTo(map);
   L.control.scale({ metric: true, imperial: false, position: "bottomleft" }).addTo(map);
+  // the drawn plan's ground, then the planning grid over it, then every feature (overlayPane, 400)
+  map.createPane("zones").style.zIndex = 250;
+  map.createPane("grid").style.zIndex = 350;
+  map.getPane("grid").style.pointerEvents = "none";
 
   const groups = {};
   const g = name => (groups[name] ??= L.layerGroup());
@@ -36,27 +48,37 @@ export function buildMap(container, plot, grid, opts = {}) {
     else opts.onSelect?.(f, layer);
   }
 
+  // A planned feature (not built yet) is drawn dashed and faded, and carries the class the
+  // Planned switch in Layers hides by.
   function styleFor(f) {
-    const c = catOf(f);
-    if (f.geom.type === "LineString") return f.type === "fences" ? { color: c.color, weight: 4 } : { color: c.color, weight: 3, dashArray: "2 7" };
-    return { color: c.color, weight: 2, fillColor: c.color, fillOpacity: f.type === "structures" ? 0.85 : 0.25 };
+    const c = catOf(f), plan = f.planned ? { className: "planned" } : {};
+    if (f.geom.type === "LineString") {
+      if (f.type === "fences") return f.planned ? { color: c.color, weight: 3.5, opacity: 0.8, dashArray: "9 6", ...plan } : { color: c.color, weight: 4 };
+      return { color: c.color, weight: 3, dashArray: "2 7", ...(f.planned ? { opacity: 0.65 } : {}), ...plan };
+    }
+    return { color: c.color, weight: 2, fillColor: c.color, fillOpacity: fillFor(f, false), ...(f.planned ? { dashArray: "7 5" } : {}), ...plan };
+  }
+  function fillFor(f, overImagery) {
+    if (overImagery) return f.planned ? 0.06 : 0.12;
+    return (f.type === "structures" ? 0.85 : 0.25) * (f.planned ? 0.4 : 1);
   }
 
   function draw(f) {
     if (!f.geom) return null;
     const c = catOf(f), xy = f.geom.xy, group = g(c.id);
+    const cls = f.planned ? "planned" : "", tail = f.planned ? " · planned" : "";
     let layer;
     if (f.geom.type === "Point") {
-      layer = L.marker(ll(xy), { icon: iconFor(c), riseOnHover: true });
-      label(layer, f.name);
+      layer = L.marker(ll(xy), { icon: iconFor(c, 28, f.planned), riseOnHover: true });
+      label(layer, f.name + tail, cls);
     } else if (f.geom.type === "LineString") {
       layer = L.polyline(lls(xy), styleFor(f));
-      label(layer, `${f.name} · ${fmtLength(lineLength(xy))}`);
+      label(layer, `${f.name} · ${fmtLength(lineLength(xy))}${tail}`, cls);
     } else {
       layer = L.polygon(lls(xy), styleFor(f));
-      const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c), riseOnHover: true, keyboard: false });
-      areaPins.push({ pin, cat: c, xy });
-      label(pin, f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`);
+      const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c, 28, f.planned), riseOnHover: true, keyboard: false });
+      areaPins.push({ pin, cat: c, xy, planned: !!f.planned });
+      label(pin, (f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`) + tail, cls);
       pin.feature = f;
       pin.on("click", e => tapped(e, f, layer));
       pin.addTo(group);
@@ -70,7 +92,7 @@ export function buildMap(container, plot, grid, opts = {}) {
 
   // --- base: zones, context, boundaries ---
   for (const z of plot.zones ?? []) {
-    L.polygon(lls(z.geom.xy), { stroke: false, fillColor: z.zone === "forest" ? "#b9cf9c" : "#dfe9c8", fillOpacity: 1, interactive: false }).addTo(g("zones"));
+    L.polygon(lls(z.geom.xy), { pane: "zones", stroke: false, fillColor: z.zone === "forest" ? "#b9cf9c" : "#dfe9c8", fillOpacity: 1, interactive: false }).addTo(g("zones"));
   }
   for (const c of plot.context ?? []) {
     if (c.geom.type === "Polygon") {
@@ -94,18 +116,22 @@ export function buildMap(container, plot, grid, opts = {}) {
   for (const c of CATEGORIES) g(c.id).addTo(map);
 
   // --- overlays ---
-  let ortho = null, orthoOn = false;
+  let ortho = null, orthoOn = false, overImagery = false;
   const toggle = name => v => v ? g(name).addTo(map) : g(name).remove();
   const overlays = {
     ortho: { on: v => { orthoOn = v; setOrthoMode(v && !!ortho); if (!ortho) return; v ? ortho.addTo(map) : ortho.remove(); }, opacity: v => ortho?.setOpacity(v) },
     csg: { on: toggle("csg") }, sg: { on: toggle("sg") }, context: { on: toggle("context") },
     labels: { on: v => container.classList.toggle("no-labels", !v) },
+    planned: { on: v => container.classList.toggle("no-planned", !v) },
+    grid: { on: v => setGrid(v) },
   };
   for (const c of CATEGORIES) overlays[c.id] = { on: toggle(c.id) };
   // with imagery under the plan, the ground zones go and filled shapes become outlines
   function setOrthoMode(v) {
+    overImagery = v;
     v ? g("zones").remove() : g("zones").addTo(map);
-    for (const l of byId.values()) if (l.feature.geom?.type === "Polygon") l.setStyle({ fillOpacity: v ? 0.12 : styleFor(l.feature).fillOpacity, weight: v ? 3 : 2 });
+    for (const l of byId.values()) if (l.feature.geom?.type === "Polygon") l.setStyle({ fillOpacity: fillFor(l.feature, v), weight: v ? 3 : 2 });
+    drawGrid();
   }
   function setImagery(id, manifest) {
     if (ortho) ortho.remove();
@@ -114,15 +140,82 @@ export function buildMap(container, plot, grid, opts = {}) {
   }
 
   function fitAreaIcons() {
-    for (const { pin, cat, xy } of areaPins) {
+    for (const { pin, cat, xy, planned } of areaPins) {
       const pts = xy.map(p => map.latLngToContainerPoint(ll(p)));
       const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
       const across = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
       const size = Math.max(14, Math.min(28, Math.round(across * 0.85 / 2) * 2));
-      if (pin._size !== size) { pin._size = size; pin.setIcon(iconFor(cat, size)); }
+      if (pin._size !== size) { pin._size = size; pin.setIcon(iconFor(cat, size, planned)); }
     }
   }
-  const onZoom = () => { const z = map.getZoom(); container.classList.toggle("z-lo", z < 0.6); container.classList.toggle("z-hi", z >= 1.5); fitAreaIcons(); };
+
+  // --- the planning grid (grid.js): square to the boundary named in features.json, 0 at its
+  // corner post. Redrawn at the end of every zoom, because how many lines fit changes; the
+  // labels are HTML over the map, kept where each labelled line enters the screen.
+  const live = new Map(plot.features.map(f => [f.id, f]));
+  const frame = gridFrame(plot.grid, live, plot.home.fenced?.[0] ?? plot.home.bounds[0]);
+  const [[bx0, by0], [bx1, by1]] = plot.home.bounds;
+  const extentFrom = [
+    ...(plot.boundaries ?? []).map(b => b.geom.type === "Point" ? [b.geom.xy] : b.geom.xy),
+    ...[plot.grid?.along, plot.grid?.from].map(id => live.get(id)?.geom?.xy).filter(Boolean),
+  ];
+  const ext = gridExtent(frame, extentFrom.length ? extentFrom : [[[bx0, by0], [bx1, by0], [bx1, by1], [bx0, by1]]]);
+  const gridLayer = L.layerGroup();
+  const gridLabelBox = map.createPane("gridLabels");     // over lines and shapes, under icons and names
+  gridLabelBox.style.zIndex = 580; gridLabelBox.classList.add("grid-labels");
+  let gridOn = false, gridSize = 5, levels = null, labelled = [];
+  const pxPerM = () => Math.pow(2, map.getZoom()) / m0;
+  function setGrid(v) { gridOn = v; v ? gridLayer.addTo(map) : gridLayer.remove(); drawGrid(); }
+  function drawGrid() {
+    gridLayer.clearLayers();
+    if (!gridOn) { labelled = []; gridLabelBox.replaceChildren(); opts.onGrid?.(null); return; }
+    levels = gridLevels(gridSize, pxPerM());
+    const lines = gridLines(frame, ext, levels.step, levels.major);
+    const st = GRID_STYLE[overImagery ? "ortho" : "plan"];
+    for (const major of [false, true]) {
+      const set = lines.filter(l => l.major === major);
+      if (set.length) L.polyline(set.map(l => [ll(l.a), ll(l.b)]), { pane: "grid", interactive: false, ...st[major ? "major" : "minor"] }).addTo(gridLayer);
+    }
+    labelled = lines.filter(l => l.val % levels.label === 0);
+    placeLabels();
+    opts.onGrid?.(levels);
+  }
+  // A line at a fixed distance along (it runs across) is labelled where it comes in from the
+  // left; one at a fixed distance across, where it comes down from the top, clear of the buttons.
+  // Worked out on screen, placed in the pane's own coordinates; a label that would overlap one
+  // already placed (the corner, where the two rows meet) is left out.
+  function placeLabels() {
+    if (!gridOn) return;
+    const box = { x0: 4, y0: 60, x1: container.clientWidth - 4, y1: container.clientHeight - 40 };
+    const spans = [], taken = [];
+    for (const dir of ["v", "u"]) for (const l of labelled) {
+      if (l.dir !== dir) continue;
+      let a = map.latLngToContainerPoint(ll(l.a)), b = map.latLngToContainerPoint(ll(l.b));
+      if (dir === "u") [a, b] = [b, a];
+      const t = clipStart(a, b, box);
+      if (t === null) continue;
+      const x = a.x + t * (b.x - a.x), y = a.y + t * (b.y - a.y);
+      // the lines lean, so one can come on through another edge: its label would sit in the
+      // wrong row and read as the other distance. Only at the grid's own end or its own edge.
+      if (t > 0 && (dir === "u" ? Math.abs(y - box.y0) : Math.abs(x - box.x0)) > 0.5) continue;
+      const text = gridLabel(l.val);
+      const r = { x: x + 3, y: y + (dir === "u" ? 2 : -14), w: text.length * 6 + 4, h: 13 };
+      if (taken.some(q => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h)) continue;
+      taken.push(r);
+      const s = document.createElement("span"), at = map.containerPointToLayerPoint([r.x, r.y]);
+      s.className = `gl gl-${dir}`; s.textContent = text;
+      s.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
+      spans.push(s);
+    }
+    gridLabelBox.replaceChildren(...spans);
+  }
+  map.on("move zoom resize", placeLabels);
+  map.on("zoomanim", () => gridLabelBox.classList.add("moving"));
+
+  const onZoom = () => {
+    const z = map.getZoom(); container.classList.toggle("z-lo", z < 0.6); container.classList.toggle("z-hi", z >= 1.5); fitAreaIcons();
+    gridLabelBox.classList.remove("moving"); if (gridOn) drawGrid();
+  };
   map.on("zoomend", onZoom);
 
   // --- locate me ---
@@ -179,5 +272,8 @@ export function buildMap(container, plot, grid, opts = {}) {
   home(); onZoom();
 
   return { map, groups, byId, overlays, setImagery, locate, home, ll, center,
-    draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length, gpsCount: () => drawing.gps.filter(Boolean).length, active: () => !!drawing.type } };
+    grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
+      snap: xy => snapToGrid(frame, xy, gridSize) },
+    draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length,
+      gpsCount: () => drawing.gps.filter(Boolean).length, active: () => !!drawing.type, points: () => drawing.pts } };
 }

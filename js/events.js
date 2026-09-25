@@ -50,7 +50,7 @@ export function fold(plot, events) {
         break;
       }
       case "job.delete": jobs.delete(e.job); break;
-      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by }); break;
+      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by, ...(e.planned ? { planned: true } : {}) }); break;
       case "feature.move": { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; break; }
       case "feature.edit": Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
       case "feature.retire": { const f = features.get(e.feature); f.retired = e.ts; f.retireNote = e.note ?? ""; break; }

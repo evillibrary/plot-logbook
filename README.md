@@ -10,6 +10,9 @@ that you point the app at from Settings; this repo is only the app.
 - Records sync as an append-only event log through the GitHub Contents API; each device writes
   only its own files so nothing ever conflicts
 - Add or move features in the field; export them to Google Earth with the private repo's tools
+- A planning grid (1–10 m squares) square to a boundary line named in `features.json` and counted
+  in metres from its corner, with snap-to-grid for drawing; features can be marked *planned* until
+  they are built
 
 ## Data repo layout
 
@@ -34,4 +37,4 @@ Serve the app and a data folder from one origin, e.g. from their common parent:
 `http://localhost:8000/<app>/index.html?source=http://localhost:8000/<data-folder>/data/&author=me`
 (read-only source; records stay on the device).
 
-Tests: `node --test` (state derivation from the event log).
+Tests: `node --test` (state derivation from the event log, the planning grid's geometry, the offline shell).

@@ -12,8 +12,10 @@ import { CATEGORIES, iconSvg } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
+import { describeAt } from "./grid.js";
+import { fmtLength } from "./geo.js";
 
-const VERSION = "0.2.7";
+const VERSION = "0.2.8";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -117,23 +119,47 @@ const app = {
   async buildMap() {
     if (!this.plot) return;
     const im = this.plot.imagery?.[0];
-    const grid = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
+    const tiling = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
     const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
-    this.mapApi = buildMap($("map"), live, grid, {
+    this.mapApi = buildMap($("map"), live, tiling, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       picking: () => !!this.pickMode,
       onPick: xy => this.onMapClick(xy),
       onStatus: msg => toast(msg),
       onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "draw") this.refreshDrawBar(); },
+      onGrid: levels => this.refreshGridUi(levels),
     });
     if (im) { const man = await tileManifest(im.id); if (man) this.mapApi.setImagery(im.id, man); }
     this.mapApi.map.on("click", e => this.onMapClick(toXY(e.latlng)));
+    this.mapApi.grid.setSize(this.gridSettings().size);               // before the checkboxes switch it on
     for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) this.mapApi.overlays[cb.dataset.layer]?.on(cb.checked);
     this.mapApi.overlays.ortho.opacity(+$("ortho-opacity").value);
     if (view) this.mapApi.map.setView(view.center, view.zoom);
+    this.refreshGridUi();
   },
+
+  // --- the planning grid: on/off, square size and snapping are this device's, kept in settings ---
+  gridSettings() { return { on: false, size: 5, snap: false, ...this.settings.grid }; },
+  async saveGrid(changes) {
+    this.settings.grid = { ...this.gridSettings(), ...changes };
+    this.refreshGridUi();
+    await this.saveSettings();
+  },
+  refreshGridUi(levels = this.mapApi?.grid.levels()) {
+    const gs = this.gridSettings(), on = !!this.mapApi?.grid.on(), fr = this.mapApi?.grid.frame();
+    $("grid-size-val").textContent = `${gs.size} m`;
+    const how = !fr ? "" : fr.along ? `Square to ${fr.along}, counted from its corner with ${fr.from}.` : "North-up, counted from the south-west corner of the fenced area.";
+    const thin = on && levels?.thinned ? ` Showing every ${levels.step} m at this zoom; zoom in for ${gs.size} m squares.` : "";
+    $("grid-note").textContent = how + thin;
+    for (const b of document.querySelectorAll(".draw-bar .snap")) {
+      b.hidden = !on; b.setAttribute("aria-pressed", String(gs.snap)); b.textContent = `⊞ Snap to ${gs.size} m`;
+    }
+  },
+  snapping() { return !!this.mapApi?.grid.on() && this.gridSettings().snap; },
+  // "42.0 m along Side fence · 18.0 m in from it", or null while the grid is off
+  gridAt(xy) { return this.mapApi?.grid.on() ? describeAt(this.mapApi.grid.frame(), xy) : null; },
 
   // --- records ---
   async record(ev) {
@@ -297,6 +323,11 @@ const app = {
     $("draw-gps").disabled = !gps; $("draw-gps").title = gps ? `±${Math.round(gps.acc)} m` : "turn on ◎ first";
     $("draw-undo").disabled = !d.count();
     $("draw-finish").disabled = d.count() < (this.pickMode?.type === "area" ? 3 : 2);
+    // where the last point is, in tape-measure terms, and how long the side just drawn is
+    const pts = d.points(), last = pts.at(-1), prev = pts.at(-2), parts = [];
+    if (last && this.gridAt(last)) parts.push(`Last point ${this.gridAt(last)}`);
+    if (prev) parts.push(`last side ${fmtLength(Math.hypot(last[0] - prev[0], last[1] - prev[1]))}`);
+    $("draw-note").textContent = parts.length ? parts.join(" · ") : "…or tap the map to add points";
   },
   endDraw() {
     this.mapApi.draw.cancel(); this.pickMode = null;
@@ -324,12 +355,13 @@ const app = {
   async onMapClick(xy) {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
+    if (this.snapping()) xy = this.mapApi.grid.snap(xy);              // taps only: a GPS fix is a measurement
     if (mode.kind === "draw") { this.mapApi.draw.add(xy); this.refreshDrawBar(); return; }
     this.endPick();
     if (mode.kind === "move") {
-      const f = mode.feature;
+      const f = mode.feature, at = this.gridAt(xy);
       await this.record({ op: "feature.move", feature: f.id, geom: { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)], ll: this.unproject(xy).map(v => +v.toFixed(7)) }, confidence: "medium" });
-      this.render(); toast(`${f.name} moved`);
+      this.render(); toast(at ? `${f.name} moved: ${at}` : `${f.name} moved`, at ? 5000 : 2500);
     } else {
       this.showForm(featureForm(this, { type: "Point", xy: [+xy[0].toFixed(2), +xy[1].toFixed(2)] }, mode.type ? { type: mode.type } : {}));
     }
@@ -379,6 +411,17 @@ async function boot() {
     catBox.append(h("label", cb, sw, c.name));
   }
   for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) cb.addEventListener("change", () => app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked));
+  // the grid comes back as it was left: on or off, its square size, snapping
+  const gridBox = document.querySelector('#layers-sheet input[data-layer="grid"]'), gs = app.gridSettings();
+  gridBox.checked = gs.on; $("grid-size").value = gs.size;
+  gridBox.addEventListener("change", () => app.saveGrid({ on: gridBox.checked }));
+  $("grid-size").addEventListener("input", e => {
+    const n = +e.target.value;
+    app.mapApi?.grid.setSize(n); app.saveGrid({ size: n });
+    if (app.pickMode?.kind === "draw") app.refreshDrawBar();
+  });
+  for (const b of document.querySelectorAll(".draw-bar .snap")) b.addEventListener("click", () => app.saveGrid({ snap: !app.gridSettings().snap }));
+  app.refreshGridUi();
   $("sync-pill").addEventListener("click", () => app.source ? app.sync(true) : app.showTab("more"));
   $("jobs-strip").addEventListener("click", () => app.showTab("jobs"));
   $("ortho-opacity").addEventListener("input", e => app.mapApi?.overlays.ortho.opacity(+e.target.value));

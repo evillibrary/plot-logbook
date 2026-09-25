@@ -24,18 +24,18 @@
         <button class="pill icon" id="btn-layers" title="Layers">≡</button>
       </div>
       <div class="draw-bar" id="pick-bar" hidden>
-        <div class="draw-info"><strong id="pick-title">Tap the map</strong></div>
+        <div class="draw-info"><button class="snap" aria-pressed="false" hidden>⊞ Snap</button><strong id="pick-title">Tap the map</strong></div>
         <div class="row"><button class="btn" id="pick-cancel">Cancel</button></div>
       </div>
       <div class="draw-bar" id="draw-bar" hidden>
-        <div class="draw-info"><strong id="draw-title">Drawing</strong> <span id="draw-summary"></span></div>
+        <div class="draw-info"><button class="snap" aria-pressed="false" hidden>⊞ Snap</button><strong id="draw-title">Drawing</strong> <span id="draw-summary"></span></div>
         <div class="row">
           <button class="btn" id="draw-gps" title="Add a point at my GPS position">◎ Point at GPS</button>
           <button class="btn" id="draw-undo">↶ Undo</button>
           <button class="btn primary" id="draw-finish">Finish</button>
           <button class="btn" id="draw-cancel">Cancel</button>
         </div>
-        <div class="note">…or tap the map to add points</div>
+        <div class="note" id="draw-note">…or tap the map to add points</div>
       </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
@@ -59,8 +59,15 @@
         <label><input type="checkbox" data-layer="sg"> Survey diagram + river-middle line</label>
         <label><input type="checkbox" data-layer="context"> Neighbouring parcels and streets</label>
       </details>
+      <details class="grp" id="grp-grid" open>
+        <summary>Grid</summary>
+        <label><input type="checkbox" data-layer="grid"> Grid</label>
+        <div class="sub"><span class="note">Square size</span> <input type="range" id="grid-size" min="1" max="10" step="1" value="5"> <span id="grid-size-val">5 m</span></div>
+        <div class="sub note" id="grid-note"></div>
+      </details>
       <details class="grp" id="grp-features" open>
         <summary>Features</summary>
+        <label><input type="checkbox" data-layer="planned" checked> Planned (not built yet)</label>
         <div id="layer-categories"></div>
       </details>
     </div>

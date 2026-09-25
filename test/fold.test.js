@@ -36,6 +36,21 @@ test("feature add / move / edit / retire", () => {
   assert.equal(k.retired, "2026-09-14T10:00:00+02:00");
 });
 
+test("a planned feature stays planned until it is marked built, and nothing else is ever planned", () => {
+  const s = fold(plot, [
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_p", name: "Shed", type: "structures", confidence: "medium", planned: true, geom: { type: "Point", xy: [5, 5], ll: [23, -33] } }),
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_q", name: "Gate", type: "access", confidence: "medium", geom: { type: "Point", xy: [5, 5], ll: [23, -33] } }),
+    ev("2026-09-10T11:00:00+02:00", "feature.move", { feature: "f_p", geom: { type: "Point", xy: [6, 6], ll: [23, -33] } }),
+  ]);
+  assert.equal(s.features.get("f_p").planned, true, "a move does not build it");
+  assert.equal(s.features.get("f_q").planned, undefined);
+  assert.equal(s.features.get("K1").planned, undefined);
+  const built = fold(plot, [
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_p", name: "Shed", type: "structures", planned: true, geom: { type: "Point", xy: [5, 5], ll: [23, -33] } }),
+    ev("2026-09-12T10:00:00+02:00", "feature.edit", { feature: "f_p", changes: { planned: false } })]);
+  assert.equal(built.features.get("f_p").planned, false);
+});
+
 test("events fold in ts order regardless of file order", () => {
   const later = ev("2026-09-12T10:00:00+02:00", "feature.edit", { feature: "K1", changes: { name: "Second" } });
   const earlier = ev("2026-09-11T10:00:00+02:00", "feature.edit", { feature: "K1", changes: { name: "First" } });

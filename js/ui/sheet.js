@@ -55,6 +55,8 @@ export function renderFeature(app, f) {
         !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
         f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
         f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startRedraw(f) }, "⤧ Redraw"),
+        // the way back from ✓ Built: a fence drawn as if it stood that is really still an idea
+        !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, "◌ Planned"),
         f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")
           : h("button", { onclick: async () => { const note = prompt(`Retire ${f.name}? It stays in the history with its ${attached}, but leaves the map. Add a note:`); if (note !== null) { await app.record({ op: "feature.retire", feature: f.id, note }); app.closeSheet(); toast(`${f.name} retired`); } } }, "⏏ Retire"),
         h("button", { style: { color: "var(--danger)" }, onclick: () => app.deleteFeature(f, attached) }, "🗑 Delete")));

@@ -15,7 +15,7 @@ import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/fo
 import { describeAt } from "./grid.js";
 import { fmtLength } from "./geo.js";
 
-const VERSION = "0.2.8";
+const VERSION = "0.2.9";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -410,6 +410,12 @@ async function boot() {
     const sw = h("span.swatch"); sw.innerHTML = iconSvg(c, 22);
     catBox.append(h("label", cb, sw, c.name));
   }
+  // one box for all of them: ticked when all are, half-ticked when some are; a tap on a
+  // half-ticked box ticks the lot, the usual way back from looking at one category alone
+  const catAll = $("cat-all"), catBoxes = () => [...catBox.querySelectorAll("input")];
+  const syncAll = () => { const n = catBoxes().filter(c => c.checked).length; catAll.checked = n === catBoxes().length; catAll.indeterminate = n > 0 && n < catBoxes().length; };
+  catAll.addEventListener("change", () => { for (const cb of catBoxes()) { cb.checked = catAll.checked; app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked); } syncAll(); });
+  for (const cb of catBoxes()) cb.addEventListener("change", syncAll);
   for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) cb.addEventListener("change", () => app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked));
   // the grid comes back as it was left: on or off, its square size, snapping
   const gridBox = document.querySelector('#layers-sheet input[data-layer="grid"]'), gs = app.gridSettings();

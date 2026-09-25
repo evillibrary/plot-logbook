@@ -54,7 +54,7 @@ export function renderFeature(app, f) {
         f.type === "water" && h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit"),
         !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
         f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
-        f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startRedraw(f) }, "⤧ Redraw"),
+        f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
         // the way back from ✓ Built: a fence drawn as if it stood that is really still an idea
         !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, "◌ Planned"),
         f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")

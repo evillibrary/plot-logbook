@@ -4,6 +4,7 @@ import { IdbTileLayer } from "./tiles.js";
 import { CATEGORIES, catOf, iconSvg } from "./categories.js";
 import { lineLength, polygonArea, fmtLength, fmtArea, centroid, interiorPoint } from "./geo.js";
 import { gridFrame, gridExtent, gridLevels, gridLines, clipStart, snapToGrid, gridLabel } from "./grid.js";
+import { ShapeEdit, joinTo } from "./shape.js";
 
 const ll = xy => L.latLng(xy[1], xy[0]);           // [E, N] -> Leaflet latlng (lat = N, lng = E)
 const lls = xys => xys.map(ll);
@@ -33,6 +34,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   map.createPane("zones").style.zIndex = 250;
   map.createPane("grid").style.zIndex = 350;
   map.getPane("grid").style.pointerEvents = "none";
+  map.createPane("shape").style.zIndex = 660;          // reshaping handles: over every icon and name
 
   const groups = {};
   const g = name => (groups[name] ??= L.layerGroup());
@@ -267,6 +269,55 @@ export function buildMap(container, plot, tiling, opts = {}) {
   }
   function cancelDraw() { drawing.shape?.remove(); for (const d of drawing.dots) d.remove(); Object.assign(drawing, { type: null, pts: [], gps: [], shape: null, dots: [] }); }
 
+  // --- reshaping a line or an area (shape.js): a handle on every point, A and B lettered on a
+  // line, and a + halfway along each side with its length. Tap a handle to select it, then tap
+  // where it goes (the finger does not hide the target that way), or drag it. The shape as it
+  // was stays faintly underneath. The app rebuilds the map when reshaping ends, which restores it.
+  const shaping = { edit: null, f: null, layer: null, onChange: null, lines: [], dragFrom: null };
+  const shapeGroup = L.layerGroup();
+  function startShape(f, onChange) {
+    endShape();
+    Object.assign(shaping, { edit: new ShapeEdit(f.geom), f, onChange });
+    shaping.lines = plot.features.filter(o => o.id !== f.id && o.type === "fences" && o.geom?.type === "LineString")
+      .map(o => ({ id: o.id, name: o.name, xy: o.geom.xy }));
+    const was = byId.get(f.id);
+    if (was) { was.setStyle({ opacity: 0.35, fillOpacity: 0.05, dashArray: "4 6" }); was.unbindTooltip(); }
+    areaPins.find(a => a.pin.feature?.id === f.id)?.pin.remove();
+    shapeGroup.addTo(map);
+    drawShape();
+  }
+  function endShape() { shapeGroup.clearLayers(); shapeGroup.remove(); shaping.edit = null; shaping.f = null; }
+  const changed = () => { drawShape(); shaping.onChange?.(); };
+  function drawShape() {
+    shapeGroup.clearLayers();
+    const e = shaping.edit; if (!e) return;
+    shaping.layer = (e.closed ? L.polygon : L.polyline)(lls(e.pts), { pane: "shape", color: "#e0392b", weight: 3, fillColor: catOf(shaping.f).color, fillOpacity: 0.15, interactive: false }).addTo(shapeGroup);
+    for (const s of e.sides()) {
+      const a = e.pts[s.i], b = e.pts[s.j];
+      const m = L.marker(ll([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), { pane: "shape", keyboard: false,
+        icon: L.divIcon({ className: "sh-mid", html: `<b>+</b><span>${s.len.toFixed(1)} m</span>`, iconSize: [30, 30] }) });
+      m.on("click", ev => { L.DomEvent.stop(ev); e.insertAfter(s.i); changed(); });
+      m.addTo(shapeGroup);
+    }
+    e.pts.forEach((p, i) => {
+      const end = !e.closed && (i === 0 || i === e.n - 1);
+      const hnd = L.marker(ll(p), { pane: "shape", draggable: true, autoPan: false, keyboard: false,
+        icon: L.divIcon({ className: `sh-h${end ? " sh-end" : ""}${e.sel === i ? " sel" : ""}`, html: `<i>${end ? e.label(i) : ""}</i>`, iconSize: [40, 40] }) });
+      hnd.on("click", ev => { L.DomEvent.stop(ev); e.select(i); changed(); });
+      hnd.on("dragstart", () => { shaping.dragFrom = [...e.pts[i]]; e.select(i); });
+      hnd.on("drag", ev => { e.pts[i] = toXY(ev.target.getLatLng()); shaping.layer.setLatLngs(lls(e.pts)); });
+      hnd.on("dragend", ev => { const to = toXY(ev.target.getLatLng()); e.pts[i] = shaping.dragFrom; placePoint(i, to, { grid: !!opts.snapping?.() }); });
+      hnd.addTo(shapeGroup);
+    });
+  }
+  // A point lands on another fence if it is dropped within a finger's width of one (a corner
+  // before a side, so fences meet exactly), else on the grid when snapping, else where tapped.
+  function placePoint(i, xy, { grid = false } = {}) {
+    const e = shaping.edit, j = joinTo(xy, shaping.lines, 14 / pxPerM());
+    e.move(i, j ? j.p : grid && gridOn ? snapToGrid(frame, xy, gridSize) : xy, { joined: j?.name ?? null });
+    changed();
+  }
+
   const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
@@ -274,6 +325,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
   return { map, groups, byId, overlays, setImagery, locate, home, ll, center,
     grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
       snap: xy => snapToGrid(frame, xy, gridSize) },
+    shape: { start: startShape, end: endShape, edit: () => shaping.edit, redraw: drawShape,
+      place: (xy, opts) => { if (shaping.edit?.sel == null) return false; placePoint(shaping.edit.sel, xy, opts); return true; } },
     draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length,
       gpsCount: () => drawing.gps.filter(Boolean).length, active: () => !!drawing.type, points: () => drawing.pts } };
 }

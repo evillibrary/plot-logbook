@@ -37,6 +37,22 @@
         </div>
         <div class="note" id="draw-note">…or tap the map to add points</div>
       </div>
+      <div class="draw-bar" id="shape-bar" hidden>
+        <div class="draw-info"><button class="snap" aria-pressed="false" hidden>⊞ Snap</button><strong id="shape-title">Shaping</strong> <span id="shape-summary"></span></div>
+        <div class="row">
+          <button class="btn" id="shape-gps" title="Put the selected point at my GPS position">◎ Here</button>
+          <button class="btn" id="shape-length" title="Set the length of the side that ends at the selected point">Length…</button>
+          <button class="btn" id="shape-remove">✕ Remove</button>
+          <button class="btn" id="shape-swap" title="Swap which end is A">⇄ A/B</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="shape-undo">↶ Undo</button>
+          <button class="btn" id="shape-restart" title="Throw this shape away and draw it again">Start again</button>
+          <button class="btn primary" id="shape-save">Save</button>
+          <button class="btn" id="shape-cancel">Cancel</button>
+        </div>
+        <div class="note" id="shape-note"></div>
+      </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
         <button class="fab" id="btn-add" title="Log something here">+</button>

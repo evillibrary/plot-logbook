@@ -43,6 +43,26 @@
         </div>
         <div class="note" id="shape-note"></div>
       </div>
+      <div class="draw-bar" id="gate-bar" hidden>
+        <div class="draw-info"><strong id="gate-title">Gate</strong> <span id="gate-summary"></span></div>
+        <div class="row">
+          <select id="gate-kind" title="What closes the gateway"></select>
+          <select id="gate-width" title="Width, post to post"></select>
+          <button class="btn" id="gate-gps" title="Centre the gate, or put the post in hand, at my GPS position">◎ Here</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="gate-from-a" title="Tape from end A to the nearer post">From A…</button>
+          <button class="btn" id="gate-from-b" title="Tape from end B to the nearer post">From B…</button>
+          <button class="btn" id="gate-hinge" title="Which post the gate hangs on">⇄ Hinge</button>
+          <button class="btn" id="gate-opens" title="Which side it swings to">⇅ Opens</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="gate-undo">↶ Undo</button>
+          <button class="btn primary" id="gate-save">Save</button>
+          <button class="btn" id="gate-cancel">Cancel</button>
+        </div>
+        <div class="note" id="gate-note"></div>
+      </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
         <button class="fab" id="btn-add" title="Log something here">+</button>

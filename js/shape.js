@@ -23,16 +23,17 @@ export class ShapeEdit {
     this.sel = null;
     this.last = null;                                // the point placed or added last, for the readout
     this.joined = null;                              // the line the last placement landed on
+    this.flipped = false;                            // turned round, so a fence's gates are measured from the other end
     this.stack = [];
   }
   get n() { return this.pts.length; }
   get min() { return this.closed ? 3 : 2; }
   get ring() { return this.closed && this.n >= 3; }  // an area still being drawn is a line until it has three corners
 
-  snapshot() { this.stack.push({ pts: copy(this.pts), gps: [...this.gps], sel: this.sel, last: this.last }); }
+  snapshot() { this.stack.push({ pts: copy(this.pts), gps: [...this.gps], sel: this.sel, last: this.last, flipped: this.flipped }); }
   undo() {
     const s = this.stack.pop(); if (!s) return false;
-    Object.assign(this, { pts: s.pts, gps: s.gps, sel: s.sel, last: s.last, joined: null });
+    Object.assign(this, { pts: s.pts, gps: s.gps, sel: s.sel, last: s.last, flipped: s.flipped, joined: null });
     return true;
   }
   select(i) { this.sel = i == null || i < 0 || i >= this.n ? null : i; this.joined = null; }
@@ -89,7 +90,7 @@ export class ShapeEdit {
   reverse() {
     if (this.closed) return false;
     this.snapshot();
-    this.pts.reverse(); this.gps.reverse();
+    this.pts.reverse(); this.gps.reverse(); this.flipped = !this.flipped;
     if (this.sel != null) this.sel = this.n - 1 - this.sel;
     if (this.last != null) this.last = this.n - 1 - this.last;
     return true;

@@ -141,6 +141,30 @@ test("a record.void takes the records it names out of the fold, whenever it was 
   assert.equal(fold(plot, [...stray, kept]).dropped.length, 3);
 });
 
+test("a gate sits on its fence as the fence runs now, and goes and comes back with it", () => {
+  const fence = { type: "LineString", xy: [[0, 0], [30, 0]], ll: [[23, -33], [23.0003, -33]] };
+  const gate = { fence: "f_fence", at: 10, width: 3.2, kind: "single", hinge: "A", opens: "left" };
+  const add = [
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_fence", name: "Side fence", type: "fences", geom: fence }),
+    ev("2026-09-10T10:01:00+02:00", "feature.add", { feature: "f_gate", name: "Side gate", type: "access", geom: { type: "LineString", xy: [[10, 0], [13.2, 0]] }, gate }),
+  ];
+  const s0 = fold(plot, add);
+  assert.deepEqual(s0.features.get("f_gate").gate, gate);
+  assert.deepEqual(s0.features.get("f_gate").geom, { type: "LineString", xy: [[10, 0], [13.2, 0]], ll: [[23.0001, -33], [23.000132, -33]] });
+  // the fence redrawn north-south: the gate follows it without a record of its own
+  const moved = fold(plot, [...add, ev("2026-09-11T10:00:00+02:00", "feature.move", { feature: "f_fence", geom: { type: "LineString", xy: [[0, 0], [0, 30]], ll: [[23, -33], [23, -32.9997]] } })]);
+  assert.deepEqual(moved.features.get("f_gate").geom.xy, [[0, 10], [0, 13.2]]);
+  // a new width is an edit of the gate record
+  const wider = fold(plot, [...add, ev("2026-09-11T11:00:00+02:00", "feature.edit", { feature: "f_gate", changes: { gate: { ...gate, width: 4 } } })]);
+  assert.deepEqual(wider.features.get("f_gate").geom.xy, [[10, 0], [14, 0]]);
+  // the fence retired, then back
+  const retired = fold(plot, [...add, ev("2026-09-12T10:00:00+02:00", "feature.retire", { feature: "f_fence", note: "" })]);
+  assert.equal(retired.features.get("f_gate").hiddenWith, "f_fence");
+  assert.equal(retired.features.get("f_gate").retired, undefined, "hidden with its fence, not retired in its own right");
+  const back = fold(plot, [...add, ev("2026-09-12T10:00:00+02:00", "feature.delete", { feature: "f_fence" }), ev("2026-09-12T11:00:00+02:00", "feature.undelete", { feature: "f_fence" })]);
+  assert.equal(back.features.get("f_gate").hiddenWith, undefined);
+});
+
 test("a move logged before its feature was added (clock skew between phones) is dropped, not misapplied", () => {
   const s = fold(plot, [
     ev("2026-09-10T10:00:00+02:00", "feature.move", { feature: "f_9", geom: { type: "Point", xy: [9, 9] } }),

@@ -109,6 +109,18 @@ main { position: relative; min-height: 0; overflow: clip; }
 .sh-mid b { flex: none; width: 20px; height: 20px; margin-left: 5px; border-radius: 50%; background: rgba(255,255,255,.9); border: 1.5px dashed #e0392b;
   color: #e0392b; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; }
 .sh-mid span { pointer-events: none; margin-left: 3px; font-size: 11px; white-space: nowrap; background: rgba(255,255,255,.85); padding: 0 3px; border-radius: 3px; color: #333; }
+/* placing a gate: its posts are square handles, the fence's ends lettered but not to be moved,
+   and the tape distances to either end written along the fence */
+.sh-h.gt-post i { width: 16px; height: 16px; border-radius: 3px; background: #fff; border: 3px solid #3b2a1a; }
+.sh-h.gt-post.sel i { background: #ffd23f; border-color: #e0392b; }
+.sh-h.gt-end { opacity: .8; }
+.gt-tape span { position: absolute; transform: translate(-50%, -150%); white-space: nowrap; font: 600 11px/1 system-ui, sans-serif; color: #1e1f1a;
+  background: rgba(255,255,255,.9); padding: 2px 5px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.draw-bar select { padding: 7px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.gate-at { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.linkish { border: 0; background: none; color: var(--accent); font: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
+.gates { margin: 4px 0 10px; }
+.gates .list-item { padding: 6px 0; }
 /* snap-to-grid, on the pick and draw bars while the grid is showing */
 .draw-bar .snap { float: right; margin-left: 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); font-size: 12px; padding: 2px 10px; }
 .draw-bar .snap[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }

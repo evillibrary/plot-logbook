@@ -1,9 +1,9 @@
 // Offline shell. Cache-first for the app's own files; everything else (the data source) goes to the network.
-const VERSION = "plot-logbook-v0.3.1";
+const VERSION = "plot-logbook-v0.3.2";
 const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css",
   "vendor/leaflet/images/layers.png", "vendor/leaflet/images/layers-2x.png", "vendor/leaflet/images/marker-icon.png",
   "vendor/leaflet/images/marker-icon-2x.png", "vendor/leaflet/images/marker-shadow.png", "vendor/exifr.js", "vendor/fflate.js",
-  "js/app.js", "js/db.js", "js/source.js", "js/proj.js", "js/map.js", "js/tiles.js", "js/events.js", "js/photos.js", "js/categories.js", "js/geo.js", "js/grid.js", "js/shape.js",
+  "js/app.js", "js/db.js", "js/source.js", "js/proj.js", "js/map.js", "js/tiles.js", "js/events.js", "js/photos.js", "js/categories.js", "js/geo.js", "js/grid.js", "js/shape.js", "js/gate.js",
   "js/ui/dom.js", "js/ui/forms.js", "js/ui/sheet.js", "js/ui/views.js", "js/ui/more.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {

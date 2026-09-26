@@ -3,12 +3,13 @@ import { h, field, today, toast } from "./dom.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT } from "../categories.js";
 import { describeGeom } from "../geo.js";
+import { GATE_KIND } from "../gate.js";
 
 const KINDS = [["note", "Note"], ["health", "Health / condition"], ["measure", "Measurement"], ["harvest", "Harvest"], ["work", "Work done"]];
 const REPEATS = [["", "once"], ["P1D", "daily"], ["P7D", "weekly"], ["P2W", "fortnightly"], ["P1M", "monthly"], ["P3M", "quarterly"], ["P1Y", "yearly"]];
 const select = (opts, value) => h("select", {}, ...opts.map(([v, t]) => h("option", { value: v, selected: v === value }, t)));
 
-export const liveFeatures = app => [...app.state.features.values()].filter(f => !f.deleted && !f.retired).sort((a, b) => a.name.localeCompare(b.name));
+export const liveFeatures = app => [...app.state.features.values()].filter(f => !f.deleted && !f.retired && !f.hiddenWith).sort((a, b) => a.name.localeCompare(b.name));
 const featurePicker = (app, value, filter = () => true) => select([["", "— no feature —"], ...liveFeatures(app).filter(filter).map(f => [f.id, `${f.name} (${CAT[f.type]?.name ?? f.type})`])], value ?? "");
 // Every category takes a point, so the choice is the whole list; the default is the category
 // whose natural geometry matches what is being drawn.
@@ -128,30 +129,36 @@ function plannedBox(checked) {
 // New feature: geom is {type, xy} in plot metres (ll added here), or null for pets/livestock.
 // opts.viaGps: a point at the GPS position; opts.gpsPoints/points: how many of a drawn line's
 // or area's vertices were GPS fixes rather than taps; opts.back: the way back to the shape.
+// opts.gate (with opts.fence, opts.fromB): a gate, named after its fence and as sure of its
+// place as the fence is, planned if the fence is.
 export function featureForm(app, geom, opts = {}) {
+  const gate = opts.gate ?? null;
   const kind = !geom ? "none" : geom.type === "Point" ? "point" : geom.type === "LineString" ? "line" : "area";
-  const name = h("input", { placeholder: kind === "none" ? "e.g. Bella" : kind === "line" ? "e.g. North paddock fence" : kind === "area" ? "e.g. Top paddock" : "e.g. Lemon tree", required: true });
-  const type = catSelect(kind, opts.type);
+  const name = h("input", { placeholder: kind === "none" ? "e.g. Bella" : kind === "line" ? "e.g. North paddock fence" : kind === "area" ? "e.g. Top paddock" : "e.g. Lemon tree", required: true,
+    value: gate ? `${opts.fence.name} gate` : "" });
+  const type = catSelect(kind, gate ? "access" : opts.type);
   const fromGps = !!opts.viaGps || opts.gpsPoints > 0;
-  const conf = select(CONFIDENCE, fromGps ? "low" : "medium");
+  // a gate is no surer than its fence, and along it only as sure as a tap on the map
+  const conf = select(CONFIDENCE, fromGps || (gate && opts.fence.confidence === "low") ? "low" : "medium");
   const how = opts.viaGps ? " (from GPS)" : opts.gpsPoints ? ` (${opts.gpsPoints === opts.points ? "every point" : `${opts.gpsPoints} of ${opts.points} points`} by GPS)` : "";
-  const desc = h("textarea", { rows: 2, placeholder: kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
-  const planned = geom ? plannedBox(false) : null;
+  const desc = h("textarea", { rows: 2, placeholder: gate ? "Latch, chain and lock, which way it swings, anything useful" : kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
+  const planned = geom ? plannedBox(!!(gate && opts.fence.planned)) : null;
   const at = geom?.type === "Point" ? app.gridAt(geom.xy) : null;
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
     let g = null;
     if (geom) {
       const toLL = xy => app.unproject(xy).map(v => +v.toFixed(7));
-      g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.xy.map(toLL) };
+      g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.ll ?? geom.xy.map(toLL) };
     }
     await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
-      ...(planned?.input.checked ? { planned: true } : {}) });
+      ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}) });
     toast(`${name.value.trim()} added`); app.done(form);
   } },
-    opts.back && h("button.back", { type: "button", onclick: opts.back }, "‹ Back to the shape"),
-    h("h2", kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
-    geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
+    opts.back && h("button.back", { type: "button", onclick: opts.back }, gate ? "‹ Back to the gate" : "‹ Back to the shape"),
+    h("h2", gate ? "New gate" : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
+    gate ? h("p.note", `${GATE_KIND[gate.kind].name} · ${gate.width.toFixed(1)} m · ${gate.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.fence.name}${opts.viaGps ? " (placed by GPS)" : ""}`)
+      : geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
     field("Name", name), field("Category", type), planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Add"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;

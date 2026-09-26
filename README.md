@@ -13,6 +13,10 @@ that you point the app at from Settings; this repo is only the app.
 - Draw and reshape a line or area one point at a time, the same way for both: ends A and B, a
   corner added or taken out, a side set to a typed length, a point put at the GPS position, ends
   that join onto other fences, and an area's size shown in its middle while it is shaped
+- Gates on fence lines: single or double swing, sliding, walk-through or a plain opening, placed
+  by tapping the fence or by tape distance from either end, drawn with their swing (or a sliding
+  leaf's track) and the fence opened for them once built; a gate rides along when its fence is
+  reshaped, and goes with it when the fence is retired
 - A planning grid (1–10 m squares) square to a boundary line named in `features.json` and counted
   in metres from its corner, with snap-to-grid for drawing; features can be marked *planned* until
   they are built

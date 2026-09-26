@@ -5,6 +5,7 @@ import { observeForm, photoForm, jobForm, waterForm, editForm, liveFeatures } fr
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, catOf, iconSvg } from "../categories.js";
 import { describeGeom } from "../geo.js";
+import { GATE_KIND, lengthOf } from "../gate.js";
 
 const confLabel = (c, point) => ({ high: "position: high", medium: "position: medium", low: `position: low — check and ${point ? "move" : "redraw"}` })[c] ?? c;
 const ico = (cat, size = 26) => { const d = h("span.ic"); d.innerHTML = iconSvg(cat, size); return d; };
@@ -15,7 +16,8 @@ export function renderFeature(app, f) {
   const cat = catOf(f);
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
-    f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
+    f.gate ? h("span.chip", `${GATE_KIND[f.gate.kind]?.name ?? "Gate"} · ${f.gate.width.toFixed(1)} m`) : f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
+    f.hiddenWith && h("span.chip.lo", "off the map with its fence"),
     f.planned && h("span.chip.plan", "planned, not built yet"),
     // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked.
     // A plan has no measured position to be confident about.
@@ -40,7 +42,11 @@ export function renderFeature(app, f) {
       : e.kind === "job.done" ? `☑ done: ${it.title}` : "";
     return h("li", h("time", `${fmtWhen(e.ts)} · ${it.by ?? ""}`), text);
   }));
-  const counts = { photos: photoItems.length, notes: events.filter(e => e.kind === "observe").length, jobs: events.filter(e => e.kind === "job").length, readings: events.filter(e => e.kind === "water").length };
+  // a fence's gates, and for a gate, its fence
+  const isFence = f.type === "fences" && f.geom?.type === "LineString";
+  const gates = isFence ? app.gatesOn(f.id).filter(g => !g.retired) : [];
+  const fence = f.gate ? app.state.features.get(f.gate.fence) : null;
+  const counts = { photos: photoItems.length, notes: events.filter(e => e.kind === "observe").length, jobs: events.filter(e => e.kind === "job").length, readings: events.filter(e => e.kind === "water").length, gates: gates.length };
   const attached = Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
 
   const actions = f.deleted ? h("div.actions", h("button.primary", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast("restored"); app.openSheet(app.state.features.get(f.id)); } }, "↩ Restore"))
@@ -54,7 +60,9 @@ export function renderFeature(app, f) {
         f.type === "water" && h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit"),
         !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
         f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
-        f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
+        f.gate && fence?.geom?.type === "LineString" && !f.hiddenWith && h("button", { title: "Move the gate, change its width, kind or swing", onclick: () => app.startGate(fence, f) }, "⤧ Move"),
+        !f.gate && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
+        isFence && !f.retired && h("button", { onclick: () => app.startGate(f) }, "＋ Gate"),
         // the way back from ✓ Built: a fence drawn as if it stood that is really still an idea
         !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, "◌ Planned"),
         f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")
@@ -65,7 +73,13 @@ export function renderFeature(app, f) {
     app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
     h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(cat), f.name), chips,
     f.geom?.type === "Point" && app.gridAt(f.geom.xy) && h("p.note.grid-at", `📐 ${app.gridAt(f.geom.xy)}`),
+    // where a gate stands on its fence, in tape-measure terms, with the way to the fence
+    fence?.geom?.type === "LineString" && h("p.note.gate-at", `📐 ${f.gate.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(fence.geom.xy) - f.gate.at - f.gate.width).toFixed(1)} m from B, on`,
+      h("button.linkish", { onclick: () => app.goTo(fence.id) }, fence.name)),
     f.description && h("p.desc", f.description),
+    gates.length ? h("div.gates", h("div.note", `Gates (${gates.length})`), ...gates.sort((a, b) => a.gate.at - b.gate.at).map(g =>
+      h("div.list-item", { onclick: () => app.goTo(g.id) }, h("div", { style: { flex: 1 } }, g.name,
+        h("div.meta", `${g.planned ? "planned · " : ""}${GATE_KIND[g.gate.kind]?.name ?? "Gate"} · ${g.gate.width.toFixed(1)} m · ${g.gate.at.toFixed(1)} m from A`))))) : null,
     f.origin === "kml" && f.photos?.length && !photoItems.length ? h("p.note", `Survey photos: ${f.photos.join(", ")}`) : null,
     actions,
     photoItems.length ? strip : null,
@@ -105,7 +119,7 @@ export function renderList(app, restore = false) {
           h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${f.planned ? "planned · " : ""}${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
       }), !!q);
     }
-    const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted);
+    const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted && !f.hiddenWith);
     if (retired.length && !q) group("retired", "Retired", "var(--muted)", retired.map(f =>
       h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(catOf(f)),
         h("div", f.name, h("div.meta", `retired ${f.retired.slice(0, 10)} ${f.retireNote ?? ""}`)))), false);

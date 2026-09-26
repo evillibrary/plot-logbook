@@ -14,8 +14,9 @@ import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 import { describeAt } from "./grid.js";
 import { describeGeom, lineLength, polygonArea, fmtArea } from "./geo.js";
+import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate } from "./gate.js";
 
-const VERSION = "0.3.1";
+const VERSION = "0.3.2";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -122,13 +123,13 @@ const app = {
     const tiling = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && f.geom) };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom) };
     this.mapApi = buildMap($("map"), live, tiling, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       picking: () => !!this.pickMode,
       onPick: xy => this.onMapClick(xy),
       onStatus: msg => toast(msg),
-      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "shape") this.refreshShapeBar(); },
+      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "shape") this.refreshShapeBar(); if (this.pickMode?.kind === "gate") this.refreshGateBar(); },
       onGrid: levels => this.refreshGridUi(levels),
       snapping: () => this.snapping(),
     });
@@ -163,9 +164,11 @@ const app = {
   gridAt(xy) { return this.mapApi?.grid.on() ? describeAt(this.mapApi.grid.frame(), xy) : null; },
 
   // --- records ---
-  async record(ev) {
-    await events.append(ev, this.ctx);
-    if (ev.op.startsWith("feature.")) this._needsMap = true;
+  async record(ev) { return this.recordAll([ev]); },
+  // several records that belong together (a fence reshaped and the gates it carries) land as one change
+  async recordAll(evs) {
+    for (const ev of evs) await events.append(ev, this.ctx);
+    if (evs.some(ev => ev.op.startsWith("feature."))) this._needsMap = true;
     await this.refold();
     this.render();
     this.updateSyncSummary();
@@ -336,8 +339,18 @@ const app = {
     $("shape-swap").disabled = e.n < 2;
     $("shape-undo").disabled = !e.stack.length;
     $("shape-restart").disabled = !e.n;
-    $("shape-save").disabled = !e.canSave(isNew);
-    $("shape-note").textContent = this.shapeNote(e);
+    const carried = this.carriedGates(e), stuck = carried.filter(c => !c.r.fits);
+    $("shape-save").disabled = !e.canSave(isNew) || stuck.length > 0;
+    // a gate that no longer fits, or will slide to stay on the fence, is said before Save
+    const gates = [...stuck.map(c => `${c.g.name} (${c.g.gate.width.toFixed(1)} m) no longer fits: the fence is ${lineLength(e.pts).toFixed(1)} m.`),
+      ...carried.filter(c => c.r.fits && c.r.slid >= 0.05).map(c => `${c.g.name} will slide ${c.r.slid.toFixed(1)} m to stay on the fence.`)];
+    $("shape-note").textContent = [this.shapeNote(e), ...gates].join(" ");
+  },
+  // the gates on the fence being reshaped, each with where the new shape will carry it
+  carriedGates(e) {
+    const f = this.pickMode?.feature;
+    if (!f || e.n < 2) return [];
+    return this.gatesOn(f.id).map(g => ({ g, r: refit(g.gate, e.pts, e.flipped) }));
   },
   // Under the buttons: the point in hand, or where the last one went, in tape-measure terms,
   // and what the next tap will do.
@@ -391,15 +404,90 @@ const app = {
     }
     const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
     const confidence = e.confidence(f.confidence);
+    // gates ride along without a record of their own, unless they slid or the line was turned round
+    const gates = this.carriedGates(e).map(({ g, r }) => ({ g, gate: normGate(r.gate) }))
+      .filter(({ g, gate }) => JSON.stringify(gate) !== JSON.stringify(normGate(g.gate)))
+      .map(({ g, gate }) => ({ op: "feature.edit", feature: g.id, changes: { gate } }));
     this.leaveShape();
-    await this.record({ op: "feature.move", feature: f.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence });
+    await this.recordAll([{ op: "feature.move", feature: f.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence }, ...gates]);
     toast(`${f.name} reshaped: ${describeGeom(geom)}`);
     this.openSheet(this.state.features.get(f.id));
     this.applyUpdate();
   },
+  // --- gates (gate.js, drawn by map.js): put on a fence from its sheet, moved from their own ---
+  gatesOn(fid) { return [...this.state.features.values()].filter(g => g.gate?.fence === fid && !g.deleted); },
+  startGate(fence, g = null, edit = null) {
+    this.pickMode = { kind: "gate", fence, feature: g };
+    this.closeSheet();
+    if (!edit) {
+      // a new gate starts where the fence comes nearest the middle of the screen, opening into the plot
+      const c = this.mapApi.map.getCenter(), at = project(fence.geom.xy, [c.lng, c.lat]), k = GATE_KIND.single;
+      const [[e0, n0], [e1, n1]] = this.plot.home.fenced ?? this.plot.home.bounds;
+      edit = new GateEdit(fence.geom.xy, g?.gate ?? { fence: fence.id, at: at - k.width / 2, width: k.width, kind: k.id, hinge: "A", opens: sideOf(fence.geom.xy, at, [(e0 + e1) / 2, (n0 + n1) / 2]) });
+    }
+    this.mapApi.gate.start(fence, g, edit, () => this.refreshGateBar());
+    const mid = along(fence.geom.xy, edit.g.at + edit.g.width / 2), m = this.mapApi.map;
+    if (!m.getBounds().contains([mid[1], mid[0]])) m.setView([mid[1], mid[0]], Math.max(m.getZoom(), 2));
+    $("map").classList.add("picking");
+    $("gate-title").textContent = g ? `Moving ${g.name}` : `New gate on ${fence.name}`;
+    $("pick-bar").hidden = true; $("shape-bar").hidden = true; $("gate-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    this.refreshGateBar();
+  },
+  refreshGateBar() {
+    const e = this.mapApi?.gate.edit(); if (!e) return;
+    const g = e.g, k = GATE_KIND[g.kind], gps = this.lastGps, $w = $("gate-width");
+    $("gate-summary").textContent = `· ${g.width.toFixed(1)} m wide · ${g.at.toFixed(1)} m from A · ${e.fromB.toFixed(1)} m from B`;
+    $("gate-kind").value = g.kind;
+    $w.replaceChildren(...[...new Set([...k.widths, g.width])].sort((a, b) => a - b).map(w => h("option", { value: String(w), selected: w === g.width }, `${w.toFixed(1)} m`)),
+      h("option", { value: "other" }, "Other…"));
+    $("gate-hinge").hidden = !["single", "walk", "sliding"].includes(g.kind);
+    $("gate-hinge").textContent = g.kind === "sliding" ? "⇄ Slides" : "⇄ Hinge";
+    $("gate-opens").hidden = g.kind === "opening";
+    $("gate-opens").textContent = g.kind === "sliding" ? "⇅ Track" : "⇅ Opens";
+    $("gate-gps").disabled = !gps;
+    $("gate-gps").title = gps ? `${e.sel == null ? "Centre the gate" : "Put the post in hand"} at my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
+    $("gate-undo").disabled = !e.stack.length;
+    $("gate-save").disabled = !!this.pickMode?.feature && !e.changed();
+    $("gate-note").textContent = e.sel != null
+      ? `The post nearer ${e.sel ? "B" : "A"} is in hand. Tap the fence where it goes, or drag it; tap it again to let go.`
+      : "Tap the fence to move the gate there, or tap a post to move just that post.";
+  },
+  // Save: a new gate goes on to be named, and can go back to the bar; a moved one is an edit of its gate record
+  async saveGate() {
+    const { fence, feature: g } = this.pickMode, e = this.mapApi.gate.edit(), gate = normGate(e.g);
+    if (!g) {
+      this.leaveGate(); this.render();
+      this.showForm(featureForm(this, gateGeom(fence.geom, gate), { gate, fence, fromB: e.fromB, viaGps: e.gps, back: () => this.startGate(fence, null, e) }));
+      return;
+    }
+    if (!e.changed()) return this.cancelGate(false);
+    this.leaveGate();
+    await this.record({ op: "feature.edit", feature: g.id, changes: { gate, ...(e.gps && g.confidence !== "low" ? { confidence: "low" } : {}) } });
+    toast(`${g.name}: ${gate.width.toFixed(1)} m, ${gate.at.toFixed(1)} m from A`);
+    this.openSheet(this.state.features.get(g.id));
+    this.applyUpdate();
+  },
+  leaveGate() {
+    const moving = !!this.pickMode?.feature;
+    this.mapApi.gate.end(); this.pickMode = null;
+    $("gate-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
+    if (moving) this._needsMap = true;                                // the gate being moved was taken off the map
+  },
+  cancelGate(ask = true) {
+    const { fence, feature: g } = this.pickMode ?? {}, e = this.mapApi?.gate.edit();
+    const work = e && (g ? e.changed() : e.stack.length > 0);
+    if (ask && work && !confirm(g ? `Throw away the changes to ${g.name}?` : "Throw away this gate?")) return false;
+    this.leaveGate(); this.render();
+    const back = g ? this.state.features.get(g.id) : fence && this.state.features.get(fence.id);
+    if (back) this.openSheet(back);
+    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
+    return true;
+  },
   async onMapClick(xy) {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
+    if (mode.kind === "gate") { this.mapApi.gate.place(xy); return; }
     // drawing and reshaping snap for themselves: onto another fence first, then the grid
     if (mode.kind === "shape") { this.mapApi.shape.place(xy, { grid: this.snapping() }); return; }
     if (this.snapping()) xy = this.mapApi.grid.snap(xy);              // taps only: a GPS fix is a measurement
@@ -444,7 +532,7 @@ async function boot() {
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());
-  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; app.pickMode.kind === "shape" ? app.cancelShape() : app.cancelPick(); });
+  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
   // the shape bar: each button changes the working copy, which is only recorded on Save
   const shapeDo = fn => () => { const e = app.mapApi?.shape.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.shape.redraw(); app.refreshShapeBar(); } };
   // a GPS fix is a measurement: never snapped or joined, and the point says it came by GPS
@@ -456,6 +544,25 @@ async function boot() {
   $("shape-restart").addEventListener("click", shapeDo(e => e.restart()));
   $("shape-save").addEventListener("click", () => app.saveShape());
   $("shape-cancel").addEventListener("click", () => app.cancelShape());
+  // the gate bar, the same way: the working copy is only recorded on Save
+  const gateDo = fn => () => { const e = app.mapApi?.gate.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.gate.redraw(); app.refreshGateBar(); } };
+  const metres = (q, cur) => { const a = prompt(q, cur.toFixed(1)); return a == null ? null : parseFloat(a.replace(",", ".")); };
+  $("gate-kind").append(...GATE_KINDS.map(k => h("option", { value: k.id }, k.name)));
+  $("gate-kind").addEventListener("change", gateDo(e => e.setKind($("gate-kind").value)));
+  $("gate-width").addEventListener("change", gateDo(e => {
+    const v = $("gate-width").value, w = v === "other" ? metres("Gate width in metres, post to post", e.g.width) : +v;
+    if (w == null) return true;                                       // cancelled: put the list back as it was
+    if (!e.setWidth(w)) { toast("That width doesn't fit on this fence"); return true; }
+  }));
+  $("gate-from-a").addEventListener("click", gateDo(e => { const d = metres("Metres from A to the nearer gate post", e.g.at); if (d != null && !e.setFromA(d)) toast("That puts the gate off the fence"); }));
+  $("gate-from-b").addEventListener("click", gateDo(e => { const d = metres("Metres from B to the nearer gate post", e.fromB); if (d != null && !e.setFromB(d)) toast("That puts the gate off the fence"); }));
+  $("gate-hinge").addEventListener("click", gateDo(e => e.flipHinge()));
+  $("gate-opens").addEventListener("click", gateDo(e => e.flipOpens()));
+  // a GPS fix is taken as it is, onto the fence at the nearest point: centre the gate there, or the post in hand
+  $("gate-gps").addEventListener("click", gateDo(e => { if (!app.lastGps) return false; const d = project(e.xy, app.lastGps.xy); e.sel != null ? e.postAt(e.sel, d, { gps: true }) : e.centreAt(d, { gps: true }); }));
+  $("gate-undo").addEventListener("click", gateDo(e => e.undo()));
+  $("gate-save").addEventListener("click", () => app.saveGate());
+  $("gate-cancel").addEventListener("click", () => app.cancelGate());
   // one toggle per category under "Features"
   const catBox = $("layer-categories");
   for (const c of CATEGORIES) {

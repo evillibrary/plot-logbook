@@ -13,9 +13,9 @@ import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.j
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
 import { describeAt } from "./grid.js";
-import { fmtLength, describeGeom, lineLength, polygonArea, fmtArea } from "./geo.js";
+import { describeGeom, lineLength, polygonArea, fmtArea } from "./geo.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 const $ = id => document.getElementById(id);
 
 const app = {
@@ -128,7 +128,7 @@ const app = {
       picking: () => !!this.pickMode,
       onPick: xy => this.onMapClick(xy),
       onStatus: msg => toast(msg),
-      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "draw") this.refreshDrawBar(); if (this.pickMode?.kind === "shape") this.refreshShapeBar(); },
+      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "shape") this.refreshShapeBar(); },
       onGrid: levels => this.refreshGridUi(levels),
       snapping: () => this.snapping(),
     });
@@ -309,44 +309,48 @@ const app = {
     if (was?.kind === "move") this.openSheet(this.state.features.get(was.feature.id) ?? was.feature);
     toast("cancelled");
   },
-  startDraw(type, opts = {}) {                       // type: "line" | "area"
+  // --- drawing and reshaping a line or an area, one point at a time (shape.js, drawn by map.js).
+  // A new line or area is the shape editor begun with no points, so the two work alike.
+  startDraw(type) { this.startShape(null, { type }); },                // type: "line" | "area"
+  startShape(f, { type = f?.geom.type === "Polygon" ? "area" : "line", edit = null } = {}) {
+    // in shape mode before the sheet closes, so a waiting update cannot reload over the shape
+    this.pickMode = { kind: "shape", feature: f ?? null, type };
     this.closeSheet();
-    this.pickMode = { kind: "draw", type, ...opts };
-    this.mapApi.draw.start(type); $("map").classList.add("picking");
-    $("draw-title").textContent = opts.feature ? `Redrawing ${opts.feature.name}` : type === "line" ? "New line" : "New area";
-    $("pick-bar").hidden = true; $("draw-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
-    this.refreshDrawBar();
-  },
-  startRedraw(f) { this.startDraw(f.geom.type === "Polygon" ? "area" : "line", { feature: f }); },
-
-  // --- reshaping a line or an area one point at a time (shape.js, drawn by map.js) ---
-  startShape(f) {
-    this.closeSheet();
-    this.pickMode = { kind: "shape", feature: f };
-    this.mapApi.shape.start(f, () => this.refreshShapeBar());
+    this.mapApi.shape.start(f, () => this.refreshShapeBar(), { type, edit });
     $("map").classList.add("picking");
-    $("shape-title").textContent = `Shaping ${f.name}`;
-    $("shape-swap").hidden = f.geom.type === "Polygon";
-    $("pick-bar").hidden = true; $("draw-bar").hidden = true; $("shape-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    $("shape-title").textContent = f ? `Shaping ${f.name}` : type === "area" ? "New area" : "New line";
+    $("shape-swap").hidden = type === "area";
+    $("pick-bar").hidden = true; $("shape-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
     this.refreshShapeBar();
   },
   refreshShapeBar() {
     const e = this.mapApi?.shape.edit(); if (!e) return;
-    const sel = e.sel, gps = this.lastGps;
+    const isNew = !this.pickMode?.feature, sel = e.sel, gps = this.lastGps;
     // to the decimetre while fiddling: "24 m" hides the half metre an end was just moved
-    $("shape-summary").textContent = `· ${e.closed ? fmtArea(polygonArea(e.pts)) : `${lineLength(e.pts).toFixed(1)} m`} · ${e.n} points`;
-    $("shape-gps").disabled = sel == null || !gps; $("shape-gps").title = gps ? `Put the selected point at my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
-    $("shape-length").disabled = sel == null;
-    $("shape-remove").disabled = sel == null || e.n <= e.min;
+    const size = e.n < e.min ? `${e.n} of ${e.min} points` : `${e.closed ? fmtArea(polygonArea(e.pts)) : `${lineLength(e.pts).toFixed(1)} m`} · ${e.n} points`;
+    $("shape-summary").textContent = `· ${size}${e.gpsCount() ? ` (${e.gpsCount()} by GPS)` : ""}`;
+    $("shape-gps").disabled = !gps;
+    $("shape-gps").title = gps ? `${sel == null ? "Add a point" : `Put ${e.label(sel)}`} at my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
+    $("shape-length").disabled = sel == null || e.n < 2;
+    $("shape-remove").disabled = sel == null;
+    $("shape-swap").disabled = e.n < 2;
     $("shape-undo").disabled = !e.stack.length;
-    $("shape-save").disabled = !e.changed();
-    let note = "Tap a point to select it, or + to add a corner.";
-    if (sel != null) {
-      const sides = e.sidesAt(sel).map(s => `${s.len.toFixed(1)} m`), at = this.gridAt(e.pts[sel]);
-      note = [`${e.label(sel)} selected`, e.joined && `on ${e.joined}`, at, sides.length === 1 ? `side ${sides[0]}` : `sides ${sides.join(" and ")}`]
-        .filter(Boolean).join(" · ") + ". Tap the map to move it, or drag it.";
-    }
-    $("shape-note").textContent = note;
+    $("shape-restart").disabled = !e.n;
+    $("shape-save").disabled = !e.canSave(isNew);
+    $("shape-note").textContent = this.shapeNote(e);
+  },
+  // Under the buttons: the point in hand, or where the last one went, in tape-measure terms,
+  // and what the next tap will do.
+  shapeNote(e) {
+    const about = (i, what = e.label(i)) => {
+      const sides = e.sidesAt(i).map(s => `${s.len.toFixed(1)} m`);
+      return [what, e.joined && `on ${e.joined}`, this.gridAt(e.pts[i]), sides.length === 1 ? `side ${sides[0]}` : sides.length ? `sides ${sides.join(" and ")}` : null].filter(Boolean).join(" · ");
+    };
+    if (e.sel != null) return `${about(e.sel, `${e.label(e.sel)} selected`)}. Tap the map to move it, or drag it; tap it again to let go.`;
+    if (!e.n) return `Tap the map where ${e.closed ? "the first corner" : "A"} goes${this.lastGps ? ", or ◎ Here to put it at your GPS position" : ""}.`;
+    const next = e.closed ? `Tap the map to add corner ${e.n + 1}` : `Tap the map to carry the line on from ${e.label(e.n - 1)}`;
+    const short = e.n < e.min ? ` (${e.closed ? "an area needs three corners" : "a line needs two points"})` : "";
+    return `${e.last != null ? `${about(e.last)}. ` : ""}${next}${short}, or tap a point to move it.`;
   },
   shapeLength(e) {
     if (e.sel == null) return false;
@@ -355,23 +359,37 @@ const app = {
     if (ans == null) return false;
     if (!e.setLength(i, parseFloat(ans.replace(",", ".")))) { toast("That isn't a length"); return false; }
   },
-  // leaving the shape bar: the map is rebuilt, which brings back the shape as it was
+  // leaving the shape bar: a reshape rebuilds the map, which brings back the shape as it was
   leaveShape() {
+    const f = this.pickMode?.feature;
     this.mapApi.shape.end(); this.pickMode = null;
     $("shape-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
-    this._needsMap = true;
+    if (f) this._needsMap = true;
   },
-  cancelShape() {
-    const f = this.pickMode?.feature;
+  // Cancel and Escape: a shape worked on for a while is not lost to one stray tap
+  cancelShape(ask = true) {
+    const f = this.pickMode?.feature, e = this.mapApi?.shape.edit();
+    const work = e && (f ? e.changed() : e.n > 0);
+    if (ask && work && !confirm(f ? `Throw away the changes to ${f.name}?` : `Throw away this ${this.pickMode.type === "area" ? "area" : "line"}?`)) return false;
     this.leaveShape(); this.render();
     if (f) this.openSheet(this.state.features.get(f.id) ?? f);
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
+    return true;
   },
-  restartShape() { const f = this.pickMode?.feature; this.leaveShape(); if (f) this.startRedraw(f); },
+  // Save: a reshape is one move; a new line or area goes on to be named, and the form can go
+  // back to the shape as it was left, undo and all.
   async saveShape() {
-    const f = this.pickMode?.feature, e = this.mapApi.shape.edit();
-    if (!f || !e?.changed()) return this.cancelShape();
-    const geom = e.geom(), toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
+    const f = this.pickMode?.feature, type = this.pickMode?.type, e = this.mapApi.shape.edit();
+    if (!e?.canSave(!f)) return;
+    const geom = e.geom();
+    if (!f) {
+      this.leaveShape(); this.render();
+      this.showForm(featureForm(this, geom, { type: type === "line" ? "fences" : "paddocks", points: e.n, gpsPoints: e.gpsCount(),
+        back: () => this.startShape(null, { type, edit: e }) }));
+      return;
+    }
+    const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
     const confidence = e.confidence(f.confidence);
     this.leaveShape();
     await this.record({ op: "feature.move", feature: f.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence });
@@ -379,48 +397,12 @@ const app = {
     this.openSheet(this.state.features.get(f.id));
     this.applyUpdate();
   },
-  refreshDrawBar() {
-    const d = this.mapApi.draw, gps = this.lastGps;
-    $("draw-summary").textContent = `· ${d.count()} point${d.count() === 1 ? "" : "s"}${d.gpsCount() ? ` (${d.gpsCount()} by GPS)` : ""} · ${d.summary()}`;
-    $("draw-gps").disabled = !gps; $("draw-gps").title = gps ? `±${Math.round(gps.acc)} m` : "turn on ◎ first";
-    $("draw-undo").disabled = !d.count();
-    $("draw-finish").disabled = d.count() < (this.pickMode?.type === "area" ? 3 : 2);
-    // where the last point is, in tape-measure terms, and how long the side just drawn is
-    const pts = d.points(), last = pts.at(-1), prev = pts.at(-2), parts = [];
-    if (last && this.gridAt(last)) parts.push(`Last point ${this.gridAt(last)}`);
-    if (prev) parts.push(`last side ${fmtLength(Math.hypot(last[0] - prev[0], last[1] - prev[1]))}`);
-    $("draw-note").textContent = parts.length ? parts.join(" · ") : "…or tap the map to add points";
-  },
-  endDraw() {
-    this.mapApi.draw.cancel(); this.pickMode = null;
-    $("draw-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
-    this.render();
-    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
-    this.applyUpdate();
-  },
-  // A line walked with "Point at GPS" is phone-GPS evidence (±5–10 m), not a trace off the
-  // imagery, and is recorded as such: source phone-gps, confidence defaulting to low.
-  async finishDraw() {
-    const mode = this.pickMode, d = this.mapApi.draw, points = d.count(), gpsPoints = d.gpsCount();
-    const geom = d.finish();
-    if (!geom) return;
-    if (mode.feature) {
-      const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7));
-      await this.record({ op: "feature.move", feature: mode.feature.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence: gpsPoints ? "low" : "medium" });
-      this.endDraw(); toast(`${mode.feature.name} redrawn`);
-    } else {
-      const type = mode.type;
-      this.endDraw();
-      this.showForm(featureForm(this, geom, { type: type === "line" ? "fences" : "paddocks", points, gpsPoints }));
-    }
-  },
   async onMapClick(xy) {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
-    // reshaping snaps for itself: onto another fence first, then the grid
-    if (mode.kind === "shape") { if (!this.mapApi.shape.place(xy, { grid: this.snapping() })) toast("Tap a point first: an end, a corner, or + to add one"); return; }
+    // drawing and reshaping snap for themselves: onto another fence first, then the grid
+    if (mode.kind === "shape") { this.mapApi.shape.place(xy, { grid: this.snapping() }); return; }
     if (this.snapping()) xy = this.mapApi.grid.snap(xy);              // taps only: a GPS fix is a measurement
-    if (mode.kind === "draw") { this.mapApi.draw.add(xy); this.refreshDrawBar(); return; }
     this.endPick();
     if (mode.kind === "move") {
       const f = mode.feature, at = this.gridAt(xy);
@@ -461,20 +443,17 @@ async function boot() {
   $("btn-locate").addEventListener("click", () => app.mapApi?.locate((lon, lat) => app.proj.forward(lon, lat)));
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
-  $("draw-gps").addEventListener("click", () => { if (app.lastGps) { app.mapApi.draw.add(app.lastGps.xy.map(v => +v.toFixed(2)), true); app.refreshDrawBar(); } });
-  $("draw-undo").addEventListener("click", () => { app.mapApi.draw.undo(); app.refreshDrawBar(); });
-  $("draw-finish").addEventListener("click", () => app.finishDraw());
-  $("draw-cancel").addEventListener("click", () => app.endDraw());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());
-  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ draw: () => app.endDraw(), shape: () => app.cancelShape() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
+  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; app.pickMode.kind === "shape" ? app.cancelShape() : app.cancelPick(); });
   // the shape bar: each button changes the working copy, which is only recorded on Save
   const shapeDo = fn => () => { const e = app.mapApi?.shape.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.shape.redraw(); app.refreshShapeBar(); } };
-  $("shape-gps").addEventListener("click", shapeDo(e => { if (e.sel == null || !app.lastGps) return false; e.move(e.sel, app.lastGps.xy, { gps: true }); }));
+  // a GPS fix is a measurement: never snapped or joined, and the point says it came by GPS
+  $("shape-gps").addEventListener("click", shapeDo(e => { if (!app.lastGps) return false; e.sel != null ? e.move(e.sel, app.lastGps.xy, { gps: true }) : e.add(app.lastGps.xy, { gps: true }); }));
   $("shape-length").addEventListener("click", shapeDo(e => app.shapeLength(e)));
   $("shape-remove").addEventListener("click", shapeDo(e => e.sel != null && e.remove(e.sel)));
   $("shape-swap").addEventListener("click", shapeDo(e => e.reverse()));
   $("shape-undo").addEventListener("click", shapeDo(e => e.undo()));
-  $("shape-restart").addEventListener("click", () => app.restartShape());
+  $("shape-restart").addEventListener("click", shapeDo(e => e.restart()));
   $("shape-save").addEventListener("click", () => app.saveShape());
   $("shape-cancel").addEventListener("click", () => app.cancelShape());
   // one toggle per category under "Features"
@@ -484,8 +463,9 @@ async function boot() {
     const sw = h("span.swatch"); sw.innerHTML = iconSvg(c, 22);
     catBox.append(h("label", cb, sw, c.name));
   }
-  // one box for all of them: ticked when all are, half-ticked when some are; a tap on a
-  // half-ticked box ticks the lot, the usual way back from looking at one category alone
+  // "All features": one box for every category, and only those (not Satellite, Labels or the
+  // grid). Ticked when all are, half-ticked when some are; a tap on a half-ticked box ticks the
+  // lot, the usual way back from looking at one category alone
   const catAll = $("cat-all"), catBoxes = () => [...catBox.querySelectorAll("input")];
   const syncAll = () => { const n = catBoxes().filter(c => c.checked).length; catAll.checked = n === catBoxes().length; catAll.indeterminate = n > 0 && n < catBoxes().length; };
   catAll.addEventListener("change", () => { for (const cb of catBoxes()) { cb.checked = catAll.checked; app.mapApi?.overlays[cb.dataset.layer]?.on(cb.checked); } syncAll(); });
@@ -498,7 +478,6 @@ async function boot() {
   $("grid-size").addEventListener("input", e => {
     const n = +e.target.value;
     app.mapApi?.grid.setSize(n); app.saveGrid({ size: n });
-    if (app.pickMode?.kind === "draw") app.refreshDrawBar();
   });
   for (const b of document.querySelectorAll(".draw-bar .snap")) b.addEventListener("click", () => app.saveGrid({ snap: !app.gridSettings().snap }));
   app.refreshGridUi();

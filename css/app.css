@@ -97,8 +97,14 @@ main { position: relative; min-height: 0; overflow: clip; }
 .sh-h, .sh-mid { display: flex; align-items: center; justify-content: center; }
 .sh-h i { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2.5px solid #e0392b; box-shadow: 0 1px 3px rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center; font: 700 13px/1 system-ui, sans-serif; font-style: normal; color: #fff; }
+.sh-h:not(.sh-end) i { color: #e0392b; font-size: 11px; }   /* a corner's number */
 .sh-h.sh-end i { width: 26px; height: 26px; background: #e0392b; border-color: #fff; }
+.sh-h.gps i { border-color: #1a73e8; }                 /* a GPS fix, blue like the locate dot */
+.sh-h.sh-end.gps i { background: #1a73e8; border-color: #fff; }
 .sh-h.sel i { background: #ffd23f; border-color: #e0392b; color: #1e1f1a; box-shadow: 0 0 0 5px rgba(224,57,43,.3), 0 1px 3px rgba(0,0,0,.45); }
+/* the size of an area being drawn or reshaped, in its middle */
+.sh-area span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 13px/1 system-ui, sans-serif; color: #1e1f1a;
+  background: rgba(255,255,255,.88); padding: 3px 6px; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 .sh-mid { justify-content: flex-start; }
 .sh-mid b { flex: none; width: 20px; height: 20px; margin-left: 5px; border-radius: 50%; background: rgba(255,255,255,.9); border: 1.5px dashed #e0392b;
   color: #e0392b; display: flex; align-items: center; justify-content: center; font-size: 15px; line-height: 1; }

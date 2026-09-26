@@ -54,7 +54,9 @@ export function renderMore(app) {
 
 // Records the fold could not attach to anything on this map: say so, grouped, rather than
 // letting them vanish. Survey beacons and boundary lines are overlays, not editable features,
-// so a record against one usually comes from a device holding an old features.json.
+// so a record against one usually comes from a device holding an old features.json. Dismiss
+// appends a record.void naming them: deleting the lines from a log file would not stick, since
+// the phone that wrote them writes its copy back, and every other phone keeps its own.
 const WHAT = { "feature.move": ["move", "moves"], "feature.edit": ["edit", "edits"], "feature.retire": ["retirement", "retirements"],
   "feature.unretire": ["unretirement", "unretirements"], "feature.delete": ["delete", "deletes"], "feature.undelete": ["restore", "restores"],
   observe: ["note", "notes"], water: ["reading", "readings"] };
@@ -66,11 +68,19 @@ function notShown(app) {
   for (const e of dropped) { const k = `${e.feature}|${e.op}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(e); }
   const uniq = xs => [...new Set(xs)].join(", ");
   return h("div.card", h("h3", `Records not shown (${dropped.length})`),
-    h("p.note", "These refer to features this map does not have. They stay in the log; nothing is lost."),
+    h("p.note", "These refer to features this map does not have. They stay in the log; nothing is lost. Dismiss stops every device listing them."),
     ...[...groups.values()].map(list => {
       const e = list[0], b = overlays.get(e.feature), [one, many] = WHAT[e.op] ?? [e.op, e.op];
       const target = b ? `${b.name} (${b.type === "beacon" ? "a survey beacon" : "a boundary line"}, not editable in the app)` : e.feature;
-      return h("div", { style: { padding: "4px 0" } }, `${list.length} ${list.length === 1 ? one : many} of ${target}`,
-        h("div.note", `${uniq(list.map(x => x.ts.slice(0, 10)))} · ${uniq(list.map(x => x.by))}`));
+      const what = `${list.length} ${list.length === 1 ? one : many} of ${b?.name ?? e.feature}`;
+      const dismiss = async () => {
+        if (!confirm(`Dismiss ${what}?\n\nThey stay in the log file, but no device will list them here again once it has synced.`)) return;
+        await app.record({ op: "record.void", records: list.map(x => x.id), note: `dismissed: ${what}` });
+        toast(`${what} dismissed`);
+      };
+      return h("div.row", { style: { justifyContent: "space-between", padding: "4px 0", flexWrap: "nowrap" } },
+        h("div", `${list.length} ${list.length === 1 ? one : many} of ${target}`,
+          h("div.note", `${uniq(list.map(x => x.ts.slice(0, 10)))} · ${uniq(list.map(x => x.by))}`)),
+        h("button.btn", { onclick: dismiss }, "Dismiss"));
     }));
 }

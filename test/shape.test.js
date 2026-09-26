@@ -37,12 +37,77 @@ test("a new corner goes halfway along its side, and is selected", () => {
   assert.deepEqual(s.pts[4], [0, 5]);
 });
 
-test("a line keeps two points and an area three", () => {
+test("any point can be taken out, but a line needs two to save and an area three", () => {
   const l = new ShapeEdit({ type: "LineString", xy: [[0, 0], [5, 0]] });
-  assert.ok(!l.remove(0));
+  assert.ok(l.remove(0));
+  assert.equal(l.n, 1);
+  assert.ok(!l.canSave(false) && !l.canSave(true));
   const s = square();
   assert.ok(s.remove(2)); assert.equal(s.n, 3);
-  assert.ok(!s.remove(0));
+  assert.ok(s.canSave(false));
+  assert.ok(s.remove(0));
+  assert.ok(!s.canSave(false), "two corners are not an area");
+  assert.equal(s.sides().length, 1, "and have one side, not the same side twice");
+});
+
+test("a new line starts with no points: taps add A, then carry it on from B", () => {
+  const l = new ShapeEdit({ type: "LineString", xy: [] });
+  assert.equal(l.n, 0);
+  assert.ok(!l.canSave(true));
+  assert.equal(l.add([0, 0]), 0);
+  assert.equal(l.label(0), "A");
+  l.add([10, 0]); l.add([10, 20]);
+  assert.deepEqual(l.pts, [[0, 0], [10, 0], [10, 20]]);
+  assert.deepEqual([0, 1, 2].map(i => l.label(i)), ["A", "Corner 1", "B"]);
+  assert.equal(l.sel, null, "an added point is not taken in hand, so the next tap adds again");
+  assert.equal(l.last, 2);
+  assert.ok(l.canSave(true));
+  assert.ok(l.undo()); assert.equal(l.n, 2, "undo takes the last point back");
+});
+
+test("a new area adds each corner after the last, and is a ring from three", () => {
+  const a = new ShapeEdit({ type: "Polygon", xy: [] });
+  a.add([0, 0]); a.add([4, 0]);
+  assert.ok(!a.ring);
+  a.add([4, 3]);
+  assert.ok(a.ring);
+  a.add([0, 3]);
+  assert.deepEqual(a.geom(), { type: "Polygon", xy: [[0, 0], [4, 0], [4, 3], [0, 3], [0, 0]] });
+  assert.equal(a.sides().length, 4);
+});
+
+test("a point in hand is let go once it has been put somewhere", () => {
+  const l = line();
+  l.select(0); l.move(0, [0, -5]);
+  assert.equal(l.sel, null);
+  assert.equal(l.last, 0);
+  l.select(2); assert.ok(l.setLength(2, 25));
+  assert.equal(l.sel, null);
+  l.undo();
+  assert.equal(l.sel, 2, "undo gives the point back into hand");
+});
+
+test("Start again takes every point away in one step that undo reverses", () => {
+  const l = line();
+  assert.ok(l.restart());
+  assert.equal(l.n, 0);
+  assert.ok(!l.restart(), "nothing to take away");
+  l.add([1, 1]); l.add([2, 2]);
+  assert.ok(l.changed());
+  l.undo(); l.undo(); l.undo();
+  assert.deepEqual(l.pts, [[0, 0], [10, 0], [10, 20]]);
+});
+
+test("each point knows whether it came by GPS, and keeps it through undo, removal and reversal", () => {
+  const l = new ShapeEdit({ type: "LineString", xy: [] });
+  l.add([0, 0], { gps: true }); l.add([5, 0]); l.add([9, 0], { gps: true });
+  assert.equal(l.gpsCount(), 2);
+  assert.equal(l.confidence("high"), "low");
+  l.reverse(); assert.deepEqual(l.gps, [true, false, true]);
+  l.remove(0); assert.deepEqual(l.gps, [false, true]);
+  l.move(1, [8, 1]); assert.equal(l.gpsCount(), 0, "a GPS point put somewhere by tap is no longer a GPS fix");
+  l.undo(); assert.equal(l.gpsCount(), 1);
+  l.insertAfter(0); assert.deepEqual(l.gps, [false, false, true]);
 });
 
 test("setting a side's length slides the point along it, the other end staying put", () => {

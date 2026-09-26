@@ -28,12 +28,15 @@ export const allEvents = () => db.all("events");
 
 // --- fold to state ---
 // Records about a feature this map does not have are kept in `dropped`, not swallowed: that
-// is how moves logged against a stale features.json went unseen for days.
+// is how moves logged against a stale features.json went unseen for days. A record.void takes
+// the records it names out of the fold altogether, whenever it was made; it is how records not
+// shown are dismissed, since a line deleted from a log file comes back.
 export function fold(plot, events) {
   const features = new Map();
   for (const f of plot.features) features.set(f.id, { ...f, origin: "kml" });
   const obs = [], jobs = new Map(), water = [], photos = new Map(), dropped = [];
-  const sorted = [...events].sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1);
+  const voided = new Set(events.filter(e => e.op === "record.void").flatMap(e => e.records ?? []));
+  const sorted = events.filter(e => !voided.has(e.id)).sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1);
   for (const e of sorted) {
     if (String(e.op).startsWith("feature.") && e.op !== "feature.add" && !features.has(e.feature)) { dropped.push(e); continue; }
     switch (e.op) {

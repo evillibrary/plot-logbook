@@ -10,8 +10,9 @@ that you point the app at from Settings; this repo is only the app.
 - Records sync as an append-only event log through the GitHub Contents API; each device writes
   only its own files so nothing ever conflicts
 - Add or move features in the field; export them to Google Earth with the private repo's tools
-- Reshape a line or area one point at a time: ends A and B, a corner added or taken out, a side
-  set to a typed length, a point put at the GPS position, ends that join onto other fences
+- Draw and reshape a line or area one point at a time, the same way for both: ends A and B, a
+  corner added or taken out, a side set to a typed length, a point put at the GPS position, ends
+  that join onto other fences, and an area's size shown in its middle while it is shaped
 - A planning grid (1–10 m squares) square to a boundary line named in `features.json` and counted
   in metres from its corner, with snap-to-grid for drawing; features can be marked *planned* until
   they are built

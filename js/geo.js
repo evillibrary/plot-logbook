@@ -69,7 +69,8 @@ export function interiorPoint(xy) {
 
 export const fmtLength = m => m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(m < 10 ? 1 : 0)} m`;
 const thousands = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-export const fmtArea = m2 => m2 >= 10000 ? `${(m2 / 10000).toFixed(2)} ha (${thousands(m2)} m²)` : `${thousands(m2)} m²`;
+// a bed reads to a tenth of a square metre, as a short side reads to the decimetre
+export const fmtArea = m2 => m2 >= 10000 ? `${(m2 / 10000).toFixed(2)} ha (${thousands(m2)} m²)` : m2 < 100 ? `${m2.toFixed(1)} m²` : `${thousands(m2)} m²`;
 
 // Human summary of a geometry: "point", "42 m", "1 250 m²"
 export function describeGeom(geom) {

@@ -35,6 +35,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
   map.createPane("grid").style.zIndex = 350;
   map.getPane("grid").style.pointerEvents = "none";
   map.createPane("shape").style.zIndex = 660;          // reshaping handles: over every icon and name
+  map.createPane("shapeArea").style.zIndex = 655;      // the size of an area being shaped, just under them
+  map.getPane("shapeArea").style.pointerEvents = "none";
 
   const groups = {};
   const g = name => (groups[name] ??= L.layerGroup());
@@ -237,86 +239,86 @@ export function buildMap(container, plot, tiling, opts = {}) {
     }, err => opts.onStatus?.(`GPS: ${err.message}`), { enableHighAccuracy: true, maximumAge: 5000 });
   }
 
-  // --- drawing a line or an area: vertices in, preview shown, geometry out ---
-  // Each vertex remembers whether it was a tap or a GPS fix (blue, like the locate dot), so
-  // the finished feature can say how it was measured.
-  const drawing = { type: null, pts: [], gps: [], shape: null, dots: [] };
-  function startDraw(type) { cancelDraw(); drawing.type = type; }
-  function addVertex(xy, fromGps = false) {
-    drawing.pts.push(xy); drawing.gps.push(fromGps);
-    drawing.dots.push(L.circleMarker(ll(xy), { radius: 5, color: "#fff", weight: 2, fillColor: fromGps ? "#1a73e8" : "#e0392b", fillOpacity: 1, interactive: false }).addTo(map));
-    refreshDraw();
-  }
-  function undoVertex() { drawing.pts.pop(); drawing.gps.pop(); drawing.dots.pop()?.remove(); refreshDraw(); }
-  function refreshDraw() {
-    drawing.shape?.remove(); drawing.shape = null;
-    const p = drawing.pts;
-    if (p.length < 2) return;
-    const style = { color: "#e0392b", weight: 3, dashArray: "6 4", fillColor: "#e0392b", fillOpacity: 0.15, interactive: false };
-    drawing.shape = (drawing.type === "area" && p.length >= 3 ? L.polygon(lls(p), style) : L.polyline(lls(p), style)).addTo(map);
-  }
-  function drawSummary() {
-    const p = drawing.pts;
-    if (drawing.type === "area") return p.length >= 3 ? fmtArea(polygonArea(p)) : `${p.length} of 3 points`;
-    return p.length >= 2 ? fmtLength(lineLength(p)) : `${p.length} of 2 points`;
-  }
-  function finishDraw() {
-    const p = drawing.pts.map(v => [+v[0].toFixed(2), +v[1].toFixed(2)]);
-    const type = drawing.type;
-    cancelDraw();
-    if (type === "area") return p.length >= 3 ? { type: "Polygon", xy: [...p, p[0]] } : null;
-    return p.length >= 2 ? { type: "LineString", xy: p } : null;
-  }
-  function cancelDraw() { drawing.shape?.remove(); for (const d of drawing.dots) d.remove(); Object.assign(drawing, { type: null, pts: [], gps: [], shape: null, dots: [] }); }
-
-  // --- reshaping a line or an area (shape.js): a handle on every point, A and B lettered on a
-  // line, and a + halfway along each side with its length. Tap a handle to select it, then tap
-  // where it goes (the finger does not hide the target that way), or drag it. The shape as it
-  // was stays faintly underneath. The app rebuilds the map when reshaping ends, which restores it.
-  const shaping = { edit: null, f: null, layer: null, onChange: null, lines: [], dragFrom: null };
+  // --- drawing and reshaping a line or an area (shape.js): a handle on every point, A and B
+  // lettered on a line, a + halfway along each side with its length, and an area's size in its
+  // middle. With no point in hand a tap adds the next point after the end; tap a handle to take
+  // it in hand, then tap where it goes (the finger does not hide the target that way), or drag
+  // it. A new line or area starts with no points. Reshaping, the shape as it was stays faintly
+  // underneath; the app rebuilds the map when reshaping ends, which restores it.
+  const shaping = { edit: null, f: null, onChange: null, lines: [], layer: null, edge: null, closing: null, mids: [], area: null, dragFrom: null };
   const shapeGroup = L.layerGroup();
-  function startShape(f, onChange) {
+  function startShape(f, onChange, { type = "line", edit = null } = {}) {
     endShape();
-    Object.assign(shaping, { edit: new ShapeEdit(f.geom), f, onChange });
-    shaping.lines = plot.features.filter(o => o.id !== f.id && o.type === "fences" && o.geom?.type === "LineString")
+    Object.assign(shaping, { edit: edit ?? new ShapeEdit(f?.geom ?? { type: type === "area" ? "Polygon" : "LineString", xy: [] }), f, onChange });
+    shaping.lines = plot.features.filter(o => o.id !== f?.id && o.type === "fences" && o.geom?.type === "LineString")
       .map(o => ({ id: o.id, name: o.name, xy: o.geom.xy }));
-    const was = byId.get(f.id);
+    const was = f && byId.get(f.id);
     if (was) { was.setStyle({ opacity: 0.35, fillOpacity: 0.05, dashArray: "4 6" }); was.unbindTooltip(); }
-    areaPins.find(a => a.pin.feature?.id === f.id)?.pin.remove();
+    if (f) areaPins.find(a => a.pin.feature?.id === f.id)?.pin.remove();
     shapeGroup.addTo(map);
     drawShape();
   }
   function endShape() { shapeGroup.clearLayers(); shapeGroup.remove(); shaping.edit = null; shaping.f = null; }
   const changed = () => { drawShape(); shaping.onChange?.(); };
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const EDGE = { pane: "shape", color: "#e0392b", weight: 3, interactive: false };
   function drawShape() {
     shapeGroup.clearLayers();
+    Object.assign(shaping, { layer: null, edge: null, closing: null, mids: [], area: null });
     const e = shaping.edit; if (!e) return;
-    shaping.layer = (e.closed ? L.polygon : L.polyline)(lls(e.pts), { pane: "shape", color: "#e0392b", weight: 3, fillColor: catOf(shaping.f).color, fillOpacity: 0.15, interactive: false }).addTo(shapeGroup);
+    // An area's closing side, from its last corner back to the first, is dashed: that is where
+    // the next corner goes. Its size sits in the middle, under the handles, and taps go through it.
+    if (e.ring) {
+      shaping.layer = L.polygon(lls(e.pts), { ...EDGE, stroke: false, fillColor: shaping.f ? catOf(shaping.f).color : "#e0392b", fillOpacity: 0.15 }).addTo(shapeGroup);
+      shaping.closing = L.polyline(lls([e.pts.at(-1), e.pts[0]]), { ...EDGE, dashArray: "6 6" }).addTo(shapeGroup);
+      shaping.area = L.marker(ll(interiorPoint(e.pts)), { pane: "shapeArea", interactive: false, keyboard: false,
+        icon: L.divIcon({ className: "sh-area", html: `<span>${fmtArea(polygonArea(e.pts))}</span>`, iconSize: [0, 0] }) }).addTo(shapeGroup);
+    }
+    if (e.n >= 2) shaping.edge = L.polyline(lls(e.pts), EDGE).addTo(shapeGroup);
     for (const s of e.sides()) {
-      const a = e.pts[s.i], b = e.pts[s.j];
-      const m = L.marker(ll([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), { pane: "shape", keyboard: false,
+      const m = L.marker(ll(mid(e.pts[s.i], e.pts[s.j])), { pane: "shape", keyboard: false,
         icon: L.divIcon({ className: "sh-mid", html: `<b>+</b><span>${s.len.toFixed(1)} m</span>`, iconSize: [30, 30] }) });
       m.on("click", ev => { L.DomEvent.stop(ev); e.insertAfter(s.i); changed(); });
       m.addTo(shapeGroup);
+      shaping.mids.push({ m, i: s.i, j: s.j });
     }
     e.pts.forEach((p, i) => {
+      // ends carry their letter and corners their number, so what the bar names can be found
       const end = !e.closed && (i === 0 || i === e.n - 1);
       const hnd = L.marker(ll(p), { pane: "shape", draggable: true, autoPan: false, keyboard: false,
-        icon: L.divIcon({ className: `sh-h${end ? " sh-end" : ""}${e.sel === i ? " sel" : ""}`, html: `<i>${end ? e.label(i) : ""}</i>`, iconSize: [40, 40] }) });
-      hnd.on("click", ev => { L.DomEvent.stop(ev); e.select(i); changed(); });
+        icon: L.divIcon({ className: `sh-h${end ? " sh-end" : ""}${e.gps[i] ? " gps" : ""}${e.sel === i ? " sel" : ""}`, html: `<i>${e.label(i).replace("Corner ", "")}</i>`, iconSize: [40, 40] }) });
+      // a second tap on the point in hand lets go of it
+      hnd.on("click", ev => { L.DomEvent.stop(ev); e.select(e.sel === i ? null : i); changed(); });
       hnd.on("dragstart", () => { shaping.dragFrom = [...e.pts[i]]; e.select(i); });
-      hnd.on("drag", ev => { e.pts[i] = toXY(ev.target.getLatLng()); shaping.layer.setLatLngs(lls(e.pts)); });
+      hnd.on("drag", ev => { e.pts[i] = toXY(ev.target.getLatLng()); follow(); });
       hnd.on("dragend", ev => { const to = toXY(ev.target.getLatLng()); e.pts[i] = shaping.dragFrom; placePoint(i, to, { grid: !!opts.snapping?.() }); });
       hnd.addTo(shapeGroup);
     });
   }
-  // A point lands on another fence if it is dropped within a finger's width of one (a corner
-  // before a side, so fences meet exactly), else on the grid when snapping, else where tapped.
-  function placePoint(i, xy, { grid = false } = {}) {
-    const e = shaping.edit, j = joinTo(xy, shaping.lines, 14 / pxPerM());
-    e.move(i, j ? j.p : grid && gridOn ? snapToGrid(frame, xy, gridSize) : xy, { joined: j?.name ?? null });
-    changed();
+  // while a point is dragged, the sides, their lengths, the area and the bar follow the finger
+  function follow() {
+    const e = shaping.edit;
+    shaping.edge?.setLatLngs(lls(e.pts));
+    shaping.layer?.setLatLngs(lls(e.pts));
+    shaping.closing?.setLatLngs(lls([e.pts.at(-1), e.pts[0]]));
+    for (const { m, i, j } of shaping.mids) {
+      m.setLatLng(ll(mid(e.pts[i], e.pts[j])));
+      const t = m.getElement()?.querySelector("span"); if (t) t.textContent = `${Math.hypot(e.pts[i][0] - e.pts[j][0], e.pts[i][1] - e.pts[j][1]).toFixed(1)} m`;
+    }
+    if (shaping.area) {
+      shaping.area.setLatLng(ll(interiorPoint(e.pts)));
+      const t = shaping.area.getElement()?.querySelector("span"); if (t) t.textContent = fmtArea(polygonArea(e.pts));
+    }
+    shaping.onChange?.();
   }
+  // A point lands on another fence if it is put within a finger's width of one (a corner
+  // before a side, so fences meet exactly), else on the grid when snapping, else where tapped.
+  function landing(xy, grid) {
+    const j = joinTo(xy, shaping.lines, 14 / pxPerM());
+    return { p: j ? j.p : grid && gridOn ? snapToGrid(frame, xy, gridSize) : xy, joined: j?.name ?? null };
+  }
+  function placePoint(i, xy, { grid = false } = {}) { const { p, joined } = landing(xy, grid); shaping.edit.move(i, p, { joined }); changed(); }
+  function addPoint(xy, { grid = false } = {}) { const { p, joined } = landing(xy, grid); shaping.edit.add(p, { joined }); changed(); }
 
   const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
@@ -325,8 +327,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   return { map, groups, byId, overlays, setImagery, locate, home, ll, center,
     grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
       snap: xy => snapToGrid(frame, xy, gridSize) },
+    // a tap on the map while shaping: the point in hand goes there, or with none in hand the next point is added
     shape: { start: startShape, end: endShape, edit: () => shaping.edit, redraw: drawShape,
-      place: (xy, opts) => { if (shaping.edit?.sel == null) return false; placePoint(shaping.edit.sel, xy, opts); return true; } },
-    draw: { start: startDraw, add: addVertex, undo: undoVertex, finish: finishDraw, cancel: cancelDraw, summary: drawSummary, count: () => drawing.pts.length,
-      gpsCount: () => drawing.gps.filter(Boolean).length, active: () => !!drawing.type, points: () => drawing.pts } };
+      place: (xy, o) => { const e = shaping.edit; if (!e) return false; e.sel != null ? placePoint(e.sel, xy, o) : addPoint(xy, o); return true; } } };
 }

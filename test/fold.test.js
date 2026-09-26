@@ -127,6 +127,20 @@ test("records about a feature the map does not have are kept in dropped, in time
   assert.equal(s.features.has("beacon"), false, "a dropped move does not invent a feature");
 });
 
+test("a record.void takes the records it names out of the fold, whenever it was made", () => {
+  const stray = [
+    ev("2026-09-10T10:00:00+02:00", "feature.move", { feature: "beacon", geom: { type: "Point", xy: [1, 1] } }),
+    ev("2026-09-10T10:01:00+02:00", "feature.move", { feature: "beacon", geom: { type: "Point", xy: [2, 2] } }),
+  ];
+  const kept = ev("2026-09-10T10:02:00+02:00", "feature.move", { feature: "beacon", geom: { type: "Point", xy: [3, 3] } });
+  const moved = ev("2026-09-11T10:00:00+02:00", "feature.move", { feature: "K1", geom: { type: "Point", xy: [4, 4] } });
+  const voiding = ev("2026-09-09T09:00:00+02:00", "record.void", { records: stray.map(e => e.id), note: "dismissed" });
+  const s = fold(plot, [...stray, kept, moved, voiding]);
+  assert.deepEqual(s.dropped.map(e => e.id), [kept.id], "only the records it names, even from before them in time");
+  assert.deepEqual(s.features.get("K1").geom.xy, [4, 4]);
+  assert.equal(fold(plot, [...stray, kept]).dropped.length, 3);
+});
+
 test("a move logged before its feature was added (clock skew between phones) is dropped, not misapplied", () => {
   const s = fold(plot, [
     ev("2026-09-10T10:00:00+02:00", "feature.move", { feature: "f_9", geom: { type: "Point", xy: [9, 9] } }),
@@ -195,6 +209,8 @@ test("geometry helpers: length, area, formatting", async () => {
   assert.equal(polygonArea([[0, 0], [100, 0], [100, 50], [0, 50]]), 5000, "open ring counts the same");
   assert.equal(fmtLength(70), "70 m");
   assert.equal(fmtArea(5000), "5 000 m²");
+  assert.equal(fmtArea(3.75), "3.8 m²", "a bed to a tenth");
+  assert.equal(fmtArea(100), "100 m²");
   assert.equal(fmtArea(12026), "1.20 ha (12 026 m²)");
 });
 

@@ -127,7 +127,7 @@ function plannedBox(checked) {
 
 // New feature: geom is {type, xy} in plot metres (ll added here), or null for pets/livestock.
 // opts.viaGps: a point at the GPS position; opts.gpsPoints/points: how many of a drawn line's
-// or area's vertices were GPS fixes rather than taps.
+// or area's vertices were GPS fixes rather than taps; opts.back: the way back to the shape.
 export function featureForm(app, geom, opts = {}) {
   const kind = !geom ? "none" : geom.type === "Point" ? "point" : geom.type === "LineString" ? "line" : "area";
   const name = h("input", { placeholder: kind === "none" ? "e.g. Bella" : kind === "line" ? "e.g. North paddock fence" : kind === "area" ? "e.g. Top paddock" : "e.g. Lemon tree", required: true });
@@ -149,6 +149,7 @@ export function featureForm(app, geom, opts = {}) {
       ...(planned?.input.checked ? { planned: true } : {}) });
     toast(`${name.value.trim()} added`); app.done(form);
   } },
+    opts.back && h("button.back", { type: "button", onclick: opts.back }, "‹ Back to the shape"),
     h("h2", kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
     geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
     field("Name", name), field("Category", type), planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),

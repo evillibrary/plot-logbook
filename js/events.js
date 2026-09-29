@@ -31,11 +31,13 @@ export const allEvents = () => db.all("events");
 // Records about a feature this map does not have are kept in `dropped`, not swallowed: that
 // is how moves logged against a stale features.json went unseen for days. A record.void takes
 // the records it names out of the fold altogether, whenever it was made; it is how records not
-// shown are dismissed, since a line deleted from a log file comes back.
+// shown are dismissed, since a line deleted from a log file comes back. Fence types are named
+// and coloured once and shared; a fence line names its type by id, and one whose type is removed
+// is simply untyped again.
 export function fold(plot, events) {
   const features = new Map();
   for (const f of plot.features) features.set(f.id, { ...f, origin: "kml" });
-  const obs = [], jobs = new Map(), water = [], photos = new Map(), dropped = [];
+  const obs = [], jobs = new Map(), water = [], photos = new Map(), dropped = [], fencetypes = new Map();
   const voided = new Set(events.filter(e => e.op === "record.void").flatMap(e => e.records ?? []));
   const sorted = events.filter(e => !voided.has(e.id)).sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1);
   for (const e of sorted) {
@@ -54,7 +56,10 @@ export function fold(plot, events) {
         break;
       }
       case "job.delete": jobs.delete(e.job); break;
-      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by, ...(e.planned ? { planned: true } : {}), ...(e.gate ? { gate: e.gate } : {}) }); break;
+      case "fencetype.add": fencetypes.set(e.fencetype, { id: e.fencetype, name: e.name, colour: e.colour, since: e.ts, by: e.by }); break;
+      case "fencetype.edit": if (fencetypes.has(e.fencetype)) Object.assign(fencetypes.get(e.fencetype), e.changes, { edited: e.ts }); break;
+      case "fencetype.delete": fencetypes.delete(e.fencetype); break;
+      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by, ...(e.planned ? { planned: true } : {}), ...(e.gate ? { gate: e.gate } : {}), ...(e.fencetype ? { fencetype: e.fencetype } : {}) }); break;
       case "feature.move": { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; break; }
       case "feature.edit": Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
       case "feature.retire": { const f = features.get(e.feature); f.retired = e.ts; f.retireNote = e.note ?? ""; break; }
@@ -82,7 +87,7 @@ export function fold(plot, events) {
   for (const p of photos.values()) add(p.feature, "photo", { ...p, ts: p.taken || p.ts });
   for (const j of jobs.values()) { add(j.feature, "job", { ...j, ts: j.created }); for (const h of j.history) add(j.feature, "job.done", { ...j, ts: h.ts, by: h.by }); }
   for (const list of byFeature.values()) list.sort((a, b) => a.ts < b.ts ? 1 : -1);
-  return { features, obs, jobs, water, photos, byFeature, dropped };
+  return { features, obs, jobs, water, photos, byFeature, dropped, fencetypes };
 }
 
 // ISO 8601 durations: P7D, P2W, P1M, P3M, P1Y
@@ -146,7 +151,7 @@ export async function pull(source, onStatus) {
       const rows = text.split("\n").filter(Boolean).map(l => ({ ...JSON.parse(l), synced: 1 }));
       const local = new Set(await db.keys("events"));
       const fresh = rows.filter(r => !local.has(r.id));
-      if (fresh.some(r => String(r.op).startsWith("feature."))) features = true;
+      if (fresh.some(r => /^(feature|fencetype)\./.test(String(r.op)))) features = true;
       // rows already in the local store that were ours and unsynced are now confirmed
       await db.putManyKeyed("events", rows);
       n += fresh.length;

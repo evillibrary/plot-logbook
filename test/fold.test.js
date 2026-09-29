@@ -51,6 +51,33 @@ test("a planned feature stays planned until it is marked built, and nothing else
   assert.equal(built.features.get("f_p").planned, false);
 });
 
+test("fence types: named and coloured once, renamed and recoloured for every fence of them; removed, their fences are untyped", async () => {
+  const { fenceColour, fenceTypeOf } = await import("../js/categories.js");
+  const line = (xy, ll = xy) => ({ type: "LineString", xy, ll });
+  const s = fold(plot, [
+    ev("2026-09-10T09:00:00+02:00", "fencetype.add", { fencetype: "t_stock", name: "Stock fence", colour: "yellow" }),
+    ev("2026-09-10T09:01:00+02:00", "fencetype.add", { fencetype: "t_mesh", name: "Mesh", colour: "blue" }),
+    ev("2026-09-10T10:00:00+02:00", "feature.add", { feature: "f_a", name: "Side fence", type: "fences", fencetype: "t_stock", geom: line([[0, 0], [10, 0]]) }),
+    ev("2026-09-10T10:01:00+02:00", "feature.add", { feature: "f_b", name: "Back fence", type: "fences", geom: line([[0, 5], [10, 5]]) }),
+    ev("2026-09-10T10:02:00+02:00", "feature.add", { feature: "f_c", name: "Pipe", type: "water", fencetype: "t_stock", geom: line([[0, 9], [10, 9]]) }),
+    ev("2026-09-11T10:00:00+02:00", "feature.edit", { feature: "f_b", changes: { fencetype: "t_mesh" } }),
+    ev("2026-09-11T11:00:00+02:00", "fencetype.edit", { fencetype: "t_stock", changes: { name: "Stock fence 1.2 m", colour: "red" } }),
+    ev("2026-09-12T10:00:00+02:00", "feature.move", { feature: "f_a", geom: line([[0, 0], [12, 0]]) }),
+    ev("2026-09-13T10:00:00+02:00", "fencetype.delete", { fencetype: "t_mesh" }),
+    ev("2026-09-13T11:00:00+02:00", "fencetype.edit", { fencetype: "t_gone", changes: { colour: "pink" } }),
+  ]);
+  const types = s.fencetypes;
+  assert.deepEqual([...types.keys()], ["t_stock"], "a removed type goes; an edit of one never added is ignored");
+  assert.equal(types.get("t_stock").name, "Stock fence 1.2 m");
+  assert.equal(s.features.get("f_a").fencetype, "t_stock", "a reshape keeps it");
+  assert.equal(fenceColour(s.features.get("f_a"), types).id, "red", "recolouring the type recolours its fences");
+  assert.equal(fenceTypeOf(s.features.get("f_b"), types), null, "its type removed, a fence is untyped again");
+  assert.equal(fenceColour(s.features.get("f_b"), types).id, "brown", "and drawn in the category's brown");
+  assert.equal(fenceColour(s.features.get("f_c"), types), null, "only fence lines take a type's colour");
+  assert.equal(fenceColour({ type: "fences", geom: { type: "Point", xy: [0, 0] } }, types), null, "a fence post is a point, drawn as its category");
+  assert.equal(fenceColour({ type: "fences", fencetype: "t_x", geom: line([[0, 0], [1, 0]]) }, new Map([["t_x", { colour: "tartan" }]])).id, "brown", "a colour this build does not know: brown");
+});
+
 test("events fold in ts order regardless of file order", () => {
   const later = ev("2026-09-12T10:00:00+02:00", "feature.edit", { feature: "K1", changes: { name: "Second" } });
   const earlier = ev("2026-09-11T10:00:00+02:00", "feature.edit", { feature: "K1", changes: { name: "First" } });

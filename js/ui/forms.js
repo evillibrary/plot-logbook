@@ -1,7 +1,7 @@
 // The logging forms. Each returns an element; on save it calls app.record(...) and app.done(form).
 import { h, field, today, toast } from "./dom.js";
 import * as photos from "../photos.js";
-import { CATEGORIES, CAT } from "../categories.js";
+import { CATEGORIES, CAT, FENCE_COLOURS, colourOf } from "../categories.js";
 import { describeGeom } from "../geo.js";
 import { GATE_KIND } from "../gate.js";
 
@@ -126,6 +126,84 @@ function plannedBox(checked) {
   return { input, el: h("label.check", input, "Planned — not built yet") };
 }
 
+// The fence colours in a row, the chosen one ringed and named. Buttons in a div, not a label: a
+// tap anywhere on a label clicks the first button in it.
+function swatches(value) {
+  let cur = value;
+  const name = h("span.note");
+  const buttons = FENCE_COLOURS.map(c => h("button", { type: "button", title: c.name, "aria-label": c.name, dataset: { colour: c.id }, style: { background: c.color }, onclick: () => set(c.id) }));
+  const set = id => { cur = id; for (const b of buttons) b.setAttribute("aria-pressed", String(b.dataset.colour === cur)); name.textContent = colourOf(cur).name; };
+  set(cur);
+  return { el: h("div.swatches", ...buttons, name), value: () => cur };
+}
+const sortedTypes = app => [...app.state.fencetypes.values()].sort((a, b) => a.name.localeCompare(b.name));
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+// a new type's colour: the first no type has yet (brown is for fences with no type)
+const freshColour = app => { const used = new Set([...app.state.fencetypes.values()].map(t => t.colour)); return FENCE_COLOURS.find(c => c.id !== "brown" && !used.has(c.id))?.id ?? "red"; };
+
+// A fence line's type, shown only while the category is Fences: one of the types there are, none,
+// or a new one named and coloured on the spot. value(): {id} (null for none), {add: {name, colour}}
+// for a new one, or undefined when it is not a fence.
+function typePicker(app, type, value) {
+  let cur = value && app.state.fencetypes.has(value) ? value : null;
+  const name = h("input", { placeholder: "e.g. Stock fence 1.2 m", autocomplete: "off" }), colour = swatches(freshColour(app));
+  const fresh = h("div.ft-new", field("Name of the new type", name), h("div.field", h("span", "Its colour on the map"), colour.el));
+  const chip = (id, label, col) => h("button.ft", { type: "button", dataset: { ft: id ?? "" }, onclick: () => pick(id) }, col && h("i.sw", { style: { background: col } }), label);
+  const chips = [chip(null, "No type"), ...sortedTypes(app).map(t => chip(t.id, t.name, colourOf(t.colour).color)), chip("new", "＋ New type")];
+  const pick = id => {
+    cur = id;
+    for (const b of chips) b.setAttribute("aria-pressed", String((b.dataset.ft || null) === cur));
+    fresh.hidden = cur !== "new";
+    if (cur === "new") setTimeout(() => name.focus({ preventScroll: true }), 50);
+  };
+  const el = h("div.field.fencetype", h("span", "Fence type"), h("div.ft-chips", ...chips), fresh);
+  const fit = () => { el.hidden = type.value !== "fences"; };
+  type.addEventListener("change", fit);
+  pick(cur); fit();
+  return { el, value: () => type.value !== "fences" ? undefined : cur === "new" ? { add: { name: name.value.trim(), colour: colour.value() } } : { id: cur } };
+}
+// The records a type choice needs before the fence's own: a new type, unless one of that name is
+// already there (one type per name), when the fence takes that one. [records, id], or null if refused.
+function resolveType(app, t) {
+  if (!t?.add) return [[], t?.id ?? null];
+  if (!t.add.name) { toast("Name the new fence type, or choose one"); return null; }
+  const same = [...app.state.fencetypes.values()].find(x => sameName(x.name, t.add.name));
+  if (same) return [[], same.id];
+  const id = `t_${crypto.randomUUID().slice(0, 8)}`;
+  return [[{ op: "fencetype.add", fencetype: id, name: t.add.name, colour: t.add.colour }], id];
+}
+
+// A fence type on its own: its name and colour, how much fence is of it, and a way to remove it
+// (its fences stay, with no type). From Layers → Fence types, or a fence's type chip.
+export function fenceTypeForm(app, t, { onDone } = {}) {
+  const name = h("input", { value: t?.name ?? "", required: true, placeholder: "e.g. Stock fence 1.2 m", autocomplete: "off" });
+  const colour = swatches(t?.colour ?? freshColour(app));
+  const finish = () => onDone ? onDone() : app.done(form);
+  const n = t ? app.typeSummary(t.id).n : 0;
+  const form = h("form", { onsubmit: async e => {
+    e.preventDefault();
+    const nm = name.value.trim();
+    if ([...app.state.fencetypes.values()].some(x => x.id !== t?.id && sameName(x.name, nm))) return toast(`There is already a type called ${nm}`);
+    if (!t) await app.record({ op: "fencetype.add", fencetype: `t_${crypto.randomUUID().slice(0, 8)}`, name: nm, colour: colour.value() });
+    else {
+      const changes = {};
+      if (nm !== t.name) changes.name = nm;
+      if (colour.value() !== t.colour) changes.colour = colour.value();
+      if (Object.keys(changes).length) await app.record({ op: "fencetype.edit", fencetype: t.id, changes });
+    }
+    toast(t ? "saved" : `${nm} added`); finish();
+  } },
+    h("h2", t ? `Fence type: ${t.name}` : "New fence type"),
+    t && h("p.note", n ? app.typeNote(t.id) : "No fence has this type yet."),
+    field("Name", name), h("div.field", h("span", "Colour on the map"), colour.el),
+    h("div.row", h("button.btn.primary", { type: "submit" }, t ? "Save" : "Add"),
+      t && h("button.btn.danger", { type: "button", onclick: async () => {
+        if (!confirm(`Remove the fence type ${t.name}?${n ? `\n\nIts ${n === 1 ? "fence stays" : `${n} fences stay`}, with no type, drawn brown.` : ""}`)) return;
+        await app.record({ op: "fencetype.delete", fencetype: t.id }); toast(`${t.name} removed`); finish(); } }, "Remove"),
+      h("button.btn", { type: "button", onclick: finish }, "Cancel")));
+  return form;
+}
+
 // New feature: geom is {type, xy} in plot metres (ll added here), or null for pets/livestock.
 // opts.viaGps: a point at the GPS position; opts.gpsPoints/points: how many of a drawn line's
 // or area's vertices were GPS fixes rather than taps; opts.back: the way back to the shape.
@@ -143,23 +221,29 @@ export function featureForm(app, geom, opts = {}) {
   const how = opts.viaGps ? " (from GPS)" : opts.gpsPoints ? ` (${opts.gpsPoints === opts.points ? "every point" : `${opts.gpsPoints} of ${opts.points} points`} by GPS)` : "";
   const desc = h("textarea", { rows: 2, placeholder: gate ? "Latch, chain and lock, which way it swings, anything useful" : kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
   const planned = geom ? plannedBox(!!(gate && opts.fence.planned)) : null;
+  // a new fence starts as the last one drawn was, since fences are often put up a kind at a time
+  const typePick = kind === "line" && !gate ? typePicker(app, type, app.lastFenceType) : null;
   const at = geom?.type === "Point" ? app.gridAt(geom.xy) : null;
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
+    const t = typePick?.value(), rt = resolveType(app, t);
+    if (!rt) return;
+    const [typeRecords, ft] = rt;
+    if (t) app.lastFenceType = ft;
     let g = null;
     if (geom) {
       const toLL = xy => app.unproject(xy).map(v => +v.toFixed(7));
       g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.ll ?? geom.xy.map(toLL) };
     }
-    await app.record({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
-      ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}) });
+    await app.recordAll([...typeRecords, { op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
+      ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}), ...(ft ? { fencetype: ft } : {}) }]);
     toast(`${name.value.trim()} added`); app.done(form);
   } },
     opts.back && h("button.back", { type: "button", onclick: opts.back }, gate ? "‹ Back to the gate" : "‹ Back to the shape"),
     h("h2", gate ? "New gate" : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
     gate ? h("p.note", `${GATE_KIND[gate.kind].name} · ${gate.width.toFixed(1)} m · ${gate.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.fence.name}${opts.viaGps ? " (placed by GPS)" : ""}`)
       : geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
-    field("Name", name), field("Category", type), planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),
+    field("Name", name), field("Category", type), typePick?.el, planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Add"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }
@@ -170,15 +254,21 @@ export function editForm(app, f) {
   const desc = h("textarea", { rows: 3, value: f.description ?? "" });
   const conf = f.geom ? select(CONFIDENCE, CONFIDENCE.some(([v]) => v === f.confidence) ? f.confidence : "medium") : null;
   const planned = f.geom || f.planned ? plannedBox(!!f.planned) : null;
+  const typePick = kind === "line" && !f.gate ? typePicker(app, type, f.fencetype) : null;
   const form = h("form", { onsubmit: async e => {
     e.preventDefault();
+    const t = typePick?.value(), rt = resolveType(app, t);
+    if (!rt) return;
+    const [typeRecords, ft] = rt;
     const changes = { name: name.value.trim(), type: type.value, description: desc.value.trim() };
     if (conf && conf.value !== f.confidence) changes.confidence = conf.value;
     if (planned && planned.input.checked !== !!f.planned) changes.planned = planned.input.checked;
-    await app.record({ op: "feature.edit", feature: f.id, changes });
+    // null takes the type off; a type since removed already counts as none
+    if (t && ft !== (app.state.fencetypes.has(f.fencetype) ? f.fencetype : null)) { changes.fencetype = ft; app.lastFenceType = ft; }
+    await app.recordAll([...typeRecords, { op: "feature.edit", feature: f.id, changes }]);
     toast("saved"); app.done(form);
   } },
-    h("h2", `Edit ${f.name}`), field("Name", name), field("Category", type), planned?.el, conf && field("Position confidence", conf), field("Description", desc),
+    h("h2", `Edit ${f.name}`), field("Name", name), field("Category", type), typePick?.el, planned?.el, conf && field("Position confidence", conf), field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Save"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));
   return form;
 }

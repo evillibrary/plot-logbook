@@ -45,6 +45,9 @@ main { position: relative; min-height: 0; overflow: clip; }
 .fab { width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 28px; box-shadow: 0 2px 6px rgba(0,0,0,.25); margin-left: auto; }
 .jobs-strip { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 14px; }
 .locate-dot { width: 16px; height: 16px; border-radius: 50%; background: #1a73e8; border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,232,.4); }
+/* ◎: filled blue while the map follows you, a blue ring while GPS is on but the map is free */
+#btn-locate.on { color: #1a73e8; border: 2px solid #1a73e8; }
+#btn-locate.following { background: #1a73e8; color: #fff; }
 
 /* layers panel + sheet */
 .sheet { touch-action: pan-y; position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel); border-radius: 16px 16px 0 0; box-shadow: 0 -2px 12px rgba(0,0,0,.18); z-index: 600; max-height: 85%; overflow: auto; padding: 8px 16px calc(var(--safe-b) + 16px); transform: translateY(105%); transition: transform .2s ease; }
@@ -93,6 +96,29 @@ main { position: relative; min-height: 0; overflow: clip; }
 .chip.plan { background: none; border: 1px dashed var(--muted); }
 .check { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
 .check input { width: 20px; height: 20px; }
+/* fence types: a type's colour as a row of swatches, the chosen one ringed, its name alongside */
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.swatches button { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); padding: 0; }
+.swatches button[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--ink); }
+.swatches .note { display: inline-block; margin: 0 0 0 4px; font-size: 13px; }   /* not the .field caption */
+.sw { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.3); }
+button.chip { border: 0; font: inherit; font-size: 12px; cursor: pointer; }
+/* choosing a fence's type: one chip per type, No type and ＋ New type; the new type's name and colour under them */
+.ft-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ft-chips .ft { display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+.ft-chips .ft[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ft-new { margin-top: 12px; padding: 10px 12px 0; border-left: 3px solid var(--line); }
+.ft-new .swatches { gap: 5px; }                        /* nine to a row in the indent, on a phone */
+.ft-new .swatches button { width: 30px; height: 30px; }
+/* the key in Layers: a stroke of each type's colour, its name and how much fence it is, and ✎ */
+.layers .ft-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.layers .ft-row label { flex: 1; border-bottom: 0; min-width: 0; }
+.ft-line { flex: none; width: 22px; height: 5px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+.ft-name { display: flex; flex-direction: column; min-width: 0; }
+.ft-name .meta { color: var(--muted); font-size: 12px; }
+.ft-edit { flex: none; width: 40px; height: 40px; border: 0; background: none; color: var(--muted); font-size: 18px; }
+.ft-add { margin: 8px 0 4px; }
+.layers .sub.note { padding-left: 0; }
 /* reshaping: a 40 px target round each visible handle, since a fingertip is bigger than a dot */
 .sh-h, .sh-mid { display: flex; align-items: center; justify-content: center; }
 .sh-h i { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2.5px solid #e0392b; box-shadow: 0 1px 3px rgba(0,0,0,.45);

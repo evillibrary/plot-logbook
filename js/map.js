@@ -1,7 +1,7 @@
 // The drawn plan: a Leaflet map in the plot's own metric grid (E, N), north-up, with the
 // feature model rendered as vectors and imagery/boundaries as toggleable overlays.
 import { IdbTileLayer } from "./tiles.js";
-import { CATEGORIES, catOf, iconSvg } from "./categories.js";
+import { CATEGORIES, catOf, iconSvg, fenceColour, fenceTypeOf, isFenceLine } from "./categories.js";
 import { lineLength, polygonArea, fmtLength, fmtArea, centroid, interiorPoint } from "./geo.js";
 import { gridFrame, gridExtent, gridLevels, gridLines, clipStart, snapToGrid, gridLabel } from "./grid.js";
 import { ShapeEdit, joinTo } from "./shape.js";
@@ -48,6 +48,10 @@ export function buildMap(container, plot, tiling, opts = {}) {
   const live = new Map(plot.features.map(f => [f.id, f]));
   const gatesOf = new Map();
   for (const f of plot.features) if (f.gate) (gatesOf.get(f.gate.fence) ?? gatesOf.set(f.gate.fence, []).get(f.gate.fence)).push(f);
+  // fence lines by type ("none" for those without), each a group inside Fences, so Layers can
+  // show one type alone
+  const types = plot.fencetypes ?? new Map(), typeGroups = new Map();
+  const typeGroup = id => typeGroups.get(id) ?? typeGroups.set(id, L.layerGroup().addTo(g("fences"))).get(id);
 
   // A feature swallowed taps that were meant for the map, so nothing could be placed inside
   // an area — a cow in a paddock, a crop in a bed. During a pick the tap falls through.
@@ -62,7 +66,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   function styleFor(f) {
     const c = catOf(f), plan = f.planned ? { className: "planned" } : {};
     if (f.geom.type === "LineString") {
-      if (f.type === "fences") return f.planned ? { color: c.color, weight: 3.5, opacity: 0.8, dashArray: "9 6", ...plan } : { color: c.color, weight: 4 };
+      if (f.type === "fences") { const col = fenceColour(f, types).color; return f.planned ? { color: col, weight: 3.5, opacity: 0.8, dashArray: "9 6", ...plan } : { color: col, weight: 4 }; }
       return { color: c.color, weight: 3, dashArray: "2 7", ...(f.planned ? { opacity: 0.65 } : {}), ...plan };
     }
     return { color: c.color, weight: 2, fillColor: c.color, fillOpacity: fillFor(f, false), ...(f.planned ? { dashArray: "7 5" } : {}), ...plan };
@@ -75,7 +79,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   function draw(f) {
     if (!f.geom) return null;
     if (f.gate && live.get(f.gate.fence)?.geom?.type === "LineString") return drawGate(f);
-    const c = catOf(f), xy = f.geom.xy, group = g(c.id);
+    const c = catOf(f), xy = f.geom.xy, group = isFenceLine(f) ? typeGroup(fenceTypeOf(f, types)?.id ?? "none") : g(c.id);
     const cls = f.planned ? "planned" : "", tail = f.planned ? " · planned" : "";
     let layer;
     if (f.geom.type === "Point") {
@@ -84,7 +88,11 @@ export function buildMap(container, plot, tiling, opts = {}) {
     } else if (f.geom.type === "LineString") {
       // open where a gate stands: a built one, since a planned gate is not cut into the fence yet
       const cuts = (gatesOf.get(f.id) ?? []).filter(gt => !gt.planned).map(gt => [gt.gate.at, gt.gate.at + gt.gate.width]);
-      layer = L.polyline(cuts.length ? gaps(xy, cuts).map(lls) : lls(xy), styleFor(f));
+      const at = cuts.length ? gaps(xy, cuts).map(lls) : lls(xy), st = styleFor(f);
+      // a pale fence colour runs on a dark edge, the same dashes and all
+      layer = fenceColour(f, types)?.edge
+        ? L.featureGroup([L.polyline(at, { ...st, color: "#1e1f1a", weight: st.weight + 2.5, opacity: 0.55, interactive: false }), L.polyline(at, st)])
+        : L.polyline(at, st);
       label(layer, `${f.name} · ${fmtLength(lineLength(xy))}${tail}`, cls);
     } else {
       layer = L.polygon(lls(xy), styleFor(f));
@@ -162,6 +170,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
     grid: { on: v => setGrid(v) },
   };
   for (const c of CATEGORIES) overlays[c.id] = { on: toggle(c.id) };
+  // one per fence type (Layers → Fence types), inside the Fences category's own switch
+  for (const id of [...types.keys(), "none"]) overlays[`ft:${id}`] = { on: v => v ? g("fences").addLayer(typeGroup(id)) : g("fences").removeLayer(typeGroup(id)) };
   // with imagery under the plan, the ground zones go and filled shapes become outlines
   function setOrthoMode(v) {
     overImagery = v;
@@ -253,22 +263,29 @@ export function buildMap(container, plot, tiling, opts = {}) {
   };
   map.on("zoomend", onZoom);
 
-  // --- locate me ---
-  let me = null, meRing = null, watchId = null;
-  function locate(project) {
-    if (!navigator.geolocation) return opts.onStatus?.("no GPS on this device");
-    if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; me?.remove(); meRing?.remove(); me = meRing = null; opts.onLocate?.(null); return; }
-    watchId = navigator.geolocation.watchPosition(pos => {
-      const xy = project(pos.coords.longitude, pos.coords.latitude);
-      const p = ll(xy);
-      if (!me) {
-        meRing = L.circle(p, { radius: pos.coords.accuracy, color: "#1a73e8", weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
-        me = L.marker(p, { icon: L.divIcon({ className: "", html: '<div class="locate-dot"></div>', iconSize: [16, 16] }), interactive: false }).addTo(map);
-        map.setView(p, Math.max(map.getZoom(), 1.5));
-      } else { me.setLatLng(p); meRing.setLatLng(p).setRadius(pos.coords.accuracy); }
-      opts.onLocate?.(xy, pos.coords.accuracy);
-    }, err => opts.onStatus?.(`GPS: ${err.message}`), { enableHighAccuracy: true, maximumAge: 5000 });
+  // --- you are here: the dot and its accuracy ring. The GPS watch is the app's, because this map
+  // is rebuilt after every add or move and the watch has to outlive it: until 0.3.3 it lived here,
+  // and the dot went with the old map while the watch ran on unseen.
+  let me = null, meRing = null;
+  function showMe(xy, acc) {
+    if (!xy) { me?.remove(); meRing?.remove(); me = meRing = null; return; }
+    const p = ll(xy);
+    if (!me) {
+      meRing = L.circle(p, { radius: acc, color: "#1a73e8", weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+      me = L.marker(p, { icon: L.divIcon({ className: "", html: '<div class="locate-dot"></div>', iconSize: [16, 16] }), interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+    } else { me.setLatLng(p); meRing.setLatLng(p).setRadius(acc); }
   }
+  // Following: the map keeps you in the middle as you move, and a pinch or a double tap zooms in
+  // on you rather than on the fingers. A drag is someone wanting to look elsewhere (onUserPan).
+  const zoomAround = { touchZoom: map.options.touchZoom, doubleClickZoom: map.options.doubleClickZoom, scrollWheelZoom: map.options.scrollWheelZoom };
+  function setFollowing(on) { for (const k in zoomAround) map.options[k] = on && zoomAround[k] ? "center" : zoomAround[k]; }
+  function followMe(xy, { jump = false } = {}) {
+    const p = ll(xy);
+    if (jump) return map.setView(p, Math.max(map.getZoom(), 1.5));
+    if (map._animatingZoom) return;                                   // the next fix catches up
+    if (map.latLngToContainerPoint(p).distanceTo(map.getSize().divideBy(2)) >= 2) map.panTo(p, { duration: 0.5 });
+  }
+  map.on("dragstart drag", () => opts.onUserPan?.());
 
   // --- drawing and reshaping a line or an area (shape.js): a handle on every point, A and B
   // lettered on a line, a + halfway along each side with its length, and an area's size in its
@@ -415,7 +432,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
 
-  return { map, groups, byId, overlays, setImagery, locate, home, ll, center,
+  return { map, groups, byId, overlays, setImagery, showMe, follow: followMe, setFollowing, home, ll, center,
     grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
       snap: xy => snapToGrid(frame, xy, gridSize) },
     // a tap on the map while shaping: the point in hand goes there, or with none in hand the next point is added

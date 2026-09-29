@@ -1,9 +1,9 @@
 // The feature sheet: what a tapped feature is, what has happened to it, and the actions.
 // Also the searchable list of every feature, and the way back to anything not yet placed.
 import { h, clear, fmtWhen, toast } from "./dom.js";
-import { observeForm, photoForm, jobForm, waterForm, editForm, liveFeatures } from "./forms.js";
+import { observeForm, photoForm, jobForm, waterForm, editForm, fenceTypeForm, liveFeatures } from "./forms.js";
 import * as photos from "../photos.js";
-import { CATEGORIES, CAT, catOf, iconSvg } from "../categories.js";
+import { CATEGORIES, CAT, catOf, catLook, fenceTypeOf, colourOf, iconSvg } from "../categories.js";
 import { describeGeom } from "../geo.js";
 import { GATE_KIND, lengthOf } from "../gate.js";
 
@@ -13,10 +13,13 @@ const ico = (cat, size = 26) => { const d = h("span.ic"); d.innerHTML = iconSvg(
 export function renderFeature(app, f) {
   const body = clear(document.getElementById("feature-body"));
   const events = app.state.byFeature.get(f.id) ?? [];
-  const cat = catOf(f);
+  const cat = catOf(f), ft = fenceTypeOf(f, app.state.fencetypes);
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
     f.gate ? h("span.chip", `${GATE_KIND[f.gate.kind]?.name ?? "Gate"} · ${f.gate.width.toFixed(1)} m`) : f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
+    // its fence type, in the colour the map draws it; a tap renames or recolours the type
+    ft && h("button.chip.ftype", { title: `Fence type: tap to rename or recolour ${ft.name}`, onclick: () => app.showForm(fenceTypeForm(app, ft)) },
+      h("i.sw", { style: { background: colourOf(ft.colour).color } }), ft.name),
     f.hiddenWith && h("span.chip.lo", "off the map with its fence"),
     f.planned && h("span.chip.plan", "planned, not built yet"),
     // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked.
@@ -71,7 +74,7 @@ export function renderFeature(app, f) {
 
   body.append(...[
     app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
-    h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(cat), f.name), chips,
+    h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(catLook(f, app.state.fencetypes)), f.name), chips,
     f.geom?.type === "Point" && app.gridAt(f.geom.xy) && h("p.note.grid-at", `📐 ${app.gridAt(f.geom.xy)}`),
     // where a gate stands on its fence, in tape-measure terms, with the way to the fence
     fence?.geom?.type === "LineString" && h("p.note.gate-at", `📐 ${f.gate.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(fence.geom.xy) - f.gate.at - f.gate.width).toFixed(1)} m from B, on`,
@@ -102,7 +105,9 @@ export function renderList(app, restore = false) {
   const draw = () => {
     clear(listEl);
     const q = search.value.trim().toLowerCase();
-    const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q));
+    // a fence is found by its type's name too ("all the stock fence")
+    const typeName = f => fenceTypeOf(f, app.state.fencetypes)?.name ?? "";
+    const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q) || typeName(f).toLowerCase().includes(q));
     // Collapsed until you ask: thirty-odd features in one scroll is no way to find anything,
     // and a typed query opens whatever it matched.
     const group = (key, title, colour, rows, open) => {
@@ -115,8 +120,8 @@ export function renderList(app, restore = false) {
       if (!items.length) continue;
       group(c.id, c.name, c.color, items.map(f => {
         const n = (app.state.byFeature.get(f.id) ?? []).length;
-        return h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(c),
-          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${f.planned ? "planned · " : ""}${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
+        return h("div.list-item", { onclick: () => app.fromList(f, snapshot()) }, ico(catLook(f, app.state.fencetypes)),
+          h("div", { style: { flex: 1 } }, f.name, h("div.meta", `${f.planned ? "planned · " : ""}${typeName(f) ? typeName(f) + " · " : ""}${describeGeom(f.geom)}${n ? ` · ${n} entries` : ""}${f.description ? " · " + f.description.slice(0, 60) : ""}`)));
       }), !!q);
     }
     const retired = [...app.state.features.values()].filter(f => f.retired && !f.deleted && !f.hiddenWith);

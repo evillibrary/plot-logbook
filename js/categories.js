@@ -30,9 +30,35 @@ export const CATEGORIES = [
 export const CAT = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 export const catOf = f => CAT[f.type] ?? CAT.other;
 
+// A fence line can have a fence type (a kind of fence, named and coloured once and shared by every
+// phone: the `fencetypes` of the fold), so the kinds on a plot can be told apart on the map. A
+// type's `colour` is one of these ids; a fence with no type is brown, the category's own. Picked to
+// read on the drawn plan and on imagery, and kept clear of the gate orange and the GPS blue. The
+// pale ones get a dark edge, or they vanish into the plan's light ground.
+export const FENCE_COLOURS = [
+  { id: "brown",  name: "Brown",  color: "#8a4b1e" },
+  { id: "red",    name: "Red",    color: "#d7261e" },
+  { id: "yellow", name: "Yellow", color: "#f5c400", edge: true },
+  { id: "green",  name: "Green",  color: "#1e8c3a" },
+  { id: "blue",   name: "Blue",   color: "#1f3fbf" },
+  { id: "purple", name: "Purple", color: "#8b3fc6" },
+  { id: "pink",   name: "Pink",   color: "#e0479e" },
+  { id: "black",  name: "Black",  color: "#222222" },
+  { id: "white",  name: "White",  color: "#ffffff", edge: true },
+];
+const FENCE_COLOUR = Object.fromEntries(FENCE_COLOURS.map(c => [c.id, c]));
+export const colourOf = id => FENCE_COLOUR[id] ?? FENCE_COLOUR.brown;     // an id a build does not know: brown
+export const isFenceLine = f => f.type === "fences" && f.geom?.type === "LineString";
+// a fence line's type (types: the fold's fencetypes), or null: none given, or since removed
+export const fenceTypeOf = (f, types) => isFenceLine(f) && f.fencetype ? types?.get(f.fencetype) ?? null : null;
+// the colour a fence line is drawn in; null for anything else, which keeps its category's
+export const fenceColour = (f, types) => isFenceLine(f) ? colourOf(fenceTypeOf(f, types)?.colour) : null;
+// the category in a fence's colour, for its icon in the sheet and the list
+export const catLook = (f, types) => { const c = catOf(f), fc = fenceColour(f, types); return fc ? { ...c, color: fc.color } : c; };
+
 // SVG for a point icon: a disc in the category colour with the glyph in white.
 export function iconSvg(cat, size = 28) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 28 28">` +
-    `<circle cx="14" cy="14" r="12.5" fill="${cat.color}" stroke="#fff" stroke-width="2"/>` +
-    `<g transform="translate(6 6) scale(0.667)"><path d="${cat.glyph}" fill="#fff"/></g></svg>`;
+    `<circle cx="14" cy="14" r="12.5" fill="${cat.color}" stroke="${cat.color === "#ffffff" ? "#6b6f62" : "#fff"}" stroke-width="2"/>` +
+    `<g transform="translate(6 6) scale(0.667)"><path d="${cat.glyph}" fill="${cat.color === "#ffffff" ? "#1e1f1a" : "#fff"}"/></g></svg>`;
 }

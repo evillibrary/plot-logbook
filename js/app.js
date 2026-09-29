@@ -8,23 +8,101 @@ import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
 import { renderFeature, renderList } from "./ui/sheet.js";
-import { CATEGORIES, iconSvg } from "./categories.js";
+import { CATEGORIES, iconSvg, isFenceLine, fenceTypeOf, colourOf } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
-import { observeForm, photoForm, jobForm, waterForm, featureForm } from "./ui/forms.js";
+import { observeForm, photoForm, jobForm, waterForm, featureForm, fenceTypeForm } from "./ui/forms.js";
 import { describeAt } from "./grid.js";
-import { describeGeom, lineLength, polygonArea, fmtArea } from "./geo.js";
+import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength } from "./geo.js";
 import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate } from "./gate.js";
 
-const VERSION = "0.3.2";
+const VERSION = "0.3.3";
 const $ = id => document.getElementById(id);
+const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
 const app = {
   version: VERSION, settings: {}, source: null, plot: null, state: null, mapApi: null, proj: null,
   tab: "map", selected: null, pickMode: null, lastGps: null, syncing: false,
+  gps: { watch: null, follow: false, first: false, far: false, toldFree: false, wake: null }, _down: new Set(),
+  hiddenTypes: new Set(), lastFenceType: null,          // fence types switched off in Layers; the type the last fence was given
 
   get ctx() { return { author: this.settings.author || "unknown", device: this.settings.device || "unknown" }; },
   gpsNow() { return this.lastGps; },
+
+  // --- where am I (◎). On, the map follows you as you walk; a drag frees it to look elsewhere with
+  // the dot still showing, and ◎ brings it back to you. ◎ while it is following switches GPS off.
+  // The watch is the app's, not the map's: the map is rebuilt after every add or move.
+  locate() {
+    const g = this.gps;
+    if (g.watch !== null) return g.follow ? this.stopGps() : this.setFollow(true, { now: true });
+    if (!navigator.geolocation) return toast("no GPS on this device");
+    Object.assign(g, { follow: true, first: true, far: false });
+    g.watch = navigator.geolocation.watchPosition(pos => this.onFix(pos), err => toast(`GPS: ${err.message}`), { enableHighAccuracy: true, maximumAge: 5000 });
+    this.mapApi?.setFollowing(true);
+    this.keepAwake(true);
+    this.refreshLocate();
+  },
+  stopGps() {
+    const g = this.gps;
+    if (g.watch !== null) navigator.geolocation.clearWatch(g.watch);
+    Object.assign(g, { watch: null, follow: false });
+    this.lastGps = null;
+    this.mapApi?.showMe(null); this.mapApi?.setFollowing(false);
+    this.keepAwake(false);
+    this.refreshLocate(); this.refreshBars();
+  },
+  onFix(pos) {
+    const g = this.gps;
+    if (g.watch === null || !this.proj) return;
+    const xy = this.proj.forward(pos.coords.longitude, pos.coords.latitude), acc = pos.coords.accuracy;
+    this.lastGps = { xy, acc, ll: this.unproject(xy) };
+    this.mapApi?.showMe(xy, acc);
+    // a fix far from the plot (trying it out at home) leaves the map where it is, and says why once
+    const off = this.offPlot(xy);
+    if (off > FAR) { if (!g.far) toast(`You're ${Math.round(off / 1000)} km from the plot, so the map stays here`, 5000); g.far = true; }
+    else {
+      g.far = false;
+      // a finger on the map holds it still, or it would slide from under a tap; the next fix catches up
+      if (g.follow && !this._down.size) { this.mapApi?.follow(xy, { jump: g.first }); g.first = false; }
+    }
+    this.refreshLocate(); this.refreshBars();
+  },
+  offPlot(xy) { const [[e0, n0], [e1, n1]] = this.plot.home.bounds; return Math.hypot(xy[0] - (e0 + e1) / 2, xy[1] - (n0 + n1) / 2); },
+  setFollow(on, { now = false } = {}) {
+    const g = this.gps;
+    if (g.watch === null) on = false;
+    if (g.follow !== on) { g.follow = on; this.mapApi?.setFollowing(on); this.refreshLocate(); }
+    if (!on || !now || !this.lastGps) return;
+    if (g.far) toast(`You're ${Math.round(this.offPlot(this.lastGps.xy) / 1000)} km from the plot, so the map stays here`, 5000);
+    else this.mapApi?.follow(this.lastGps.xy);
+  },
+  onUserPan() {
+    if (!this.gps.follow) return;
+    this.setFollow(false);
+    if (!this.gps.toldFree) { this.gps.toldFree = true; toast("Looking around: ◎ brings the map back to you", 3500); }
+  },
+  refreshLocate() {
+    const b = $("btn-locate"), g = this.gps, on = g.watch !== null;
+    b.classList.toggle("on", on); b.classList.toggle("following", on && g.follow);
+    b.setAttribute("aria-pressed", String(on));
+    b.title = !on ? "Where am I (the map follows you)" : !g.follow ? "Back to where you are" : this.lastGps ? "Following you; tap to switch GPS off" : "Finding you; tap to switch GPS off";
+  },
+  refreshBars() {
+    if (this.pickMode?.kind === "shape") this.refreshShapeBar();
+    if (this.pickMode?.kind === "gate") this.refreshGateBar();
+  },
+  // A phone that goes to sleep stops the GPS, so the screen stays on while ◎ is. The browser lets
+  // go whenever the app is out of sight; it is asked for again on the way back (boot).
+  async keepAwake(on) {
+    const g = this.gps;
+    if (!on) { const w = g.wake; g.wake = null; try { await w?.release(); } catch {} return; }
+    if (g.wake || !navigator.wakeLock || document.visibilityState !== "visible") return;
+    try {
+      const w = await navigator.wakeLock.request("screen");
+      if (g.watch === null) return w.release();                     // switched off while asking
+      g.wake = w; w.addEventListener("release", () => { if (g.wake === w) g.wake = null; });
+    } catch {}
+  },
   unproject(xy) { return this.proj ? this.proj.inverse(xy[0], xy[1]) : [0, 0]; },
   async saveSettings() { await settingsStore.save(this.settings); },
 
@@ -81,13 +159,16 @@ const app = {
   saveView() {
     if (!this.mapApi) return;
     const c = this.mapApi.map.getCenter();
-    try { sessionStorage.setItem("pl:view", JSON.stringify({ c: [c.lat, c.lng], z: this.mapApi.map.getZoom(), tab: this.tab, t: Date.now() })); } catch {}
+    // ◎ too: the reload lands just when someone who has opened the app to walk the plot has switched it on
+    const gps = this.gps.watch === null ? null : this.gps.follow ? "follow" : "on";
+    try { sessionStorage.setItem("pl:view", JSON.stringify({ c: [c.lat, c.lng], z: this.mapApi.map.getZoom(), tab: this.tab, gps, t: Date.now() })); } catch {}
   },
   restoreView() {
     let v = null;
     try { v = JSON.parse(sessionStorage.getItem("pl:view")); sessionStorage.removeItem("pl:view"); } catch {}
     if (!v || Date.now() - v.t > 60000 || !this.mapApi) return;
     this.mapApi.map.setView(v.c, v.z, { animate: false });
+    if (v.gps) { this.locate(); if (v.gps === "on") { this.gps.first = false; this.setFollow(false); } }
     if (v.tab && v.tab !== "map") this.showTab(v.tab);
   },
 
@@ -123,13 +204,12 @@ const app = {
     const tiling = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom) };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom), fencetypes: this.state.fencetypes };
     this.mapApi = buildMap($("map"), live, tiling, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       picking: () => !!this.pickMode,
       onPick: xy => this.onMapClick(xy),
-      onStatus: msg => toast(msg),
-      onLocate: (xy, acc) => { this.lastGps = xy ? { xy, acc, ll: this.unproject(xy) } : null; if (this.pickMode?.kind === "shape") this.refreshShapeBar(); if (this.pickMode?.kind === "gate") this.refreshGateBar(); },
+      onUserPan: () => this.onUserPan(),
       onGrid: levels => this.refreshGridUi(levels),
       snapping: () => this.snapping(),
     });
@@ -139,6 +219,8 @@ const app = {
     for (const cb of document.querySelectorAll("#layers-sheet input[type=checkbox]")) this.mapApi.overlays[cb.dataset.layer]?.on(cb.checked);
     this.mapApi.overlays.ortho.opacity(+$("ortho-opacity").value);
     if (view) this.mapApi.map.setView(view.center, view.zoom);
+    // the new map carries on where the old one left off: the dot, and following you
+    if (this.gps.watch !== null) { this.mapApi.setFollowing(this.gps.follow); if (this.lastGps) this.mapApi.showMe(this.lastGps.xy, this.lastGps.acc); }
     this.refreshGridUi();
   },
 
@@ -168,7 +250,7 @@ const app = {
   // several records that belong together (a fence reshaped and the gates it carries) land as one change
   async recordAll(evs) {
     for (const ev of evs) await events.append(ev, this.ctx);
-    if (evs.some(ev => ev.op.startsWith("feature."))) this._needsMap = true;
+    if (evs.some(ev => /^(feature|fencetype)\./.test(ev.op))) this._needsMap = true;
     await this.refold();
     this.render();
     this.updateSyncSummary();
@@ -201,6 +283,38 @@ const app = {
       if (this._syncAgain) { this._syncAgain = false; this.sync(); }
     }
   },
+  // --- fence types: named and coloured once, shared, and a fence line takes its type's colour ---
+  // the live fence lines of a type ("none": those with no type, or one since removed) and how long they run
+  typeSummary(id) {
+    const fences = [...this.state.features.values()].filter(f => isFenceLine(f) && !f.retired && !f.deleted && (fenceTypeOf(f, this.state.fencetypes)?.id ?? "none") === id);
+    const run = fs => fs.reduce((s, f) => s + lineLength(f.geom.xy), 0);
+    return { n: fences.length, length: run(fences), planned: run(fences.filter(f => f.planned)), fences };
+  },
+  typeNote(id) {
+    const s = this.typeSummary(id);
+    return `${s.n} fence${s.n === 1 ? "" : "s"} · ${fmtLength(s.length)}${s.planned ? ` (${fmtLength(s.planned)} of it planned)` : ""}`;
+  },
+  // Layers → Fence types: the key to the fence colours. Each type with how many fences and how much
+  // fence it is, a switch to show or hide it on its own, and ✎ to rename, recolour or remove it.
+  renderFenceKey() {
+    const box = $("fence-key");
+    if (!box || !this.state) return;
+    const rows = [...this.state.fencetypes.values()].sort((a, b) => a.name.localeCompare(b.name)).map(t => ({ id: t.id, name: t.name, colour: colourOf(t.colour), t }));
+    if (this.typeSummary("none").n) rows.push({ id: "none", name: "No type", colour: colourOf("brown") });
+    box.replaceChildren(...rows.map(r => h("div.ft-row", { dataset: { ft: r.id } },
+      h("label", h("input", { type: "checkbox", checked: !this.hiddenTypes.has(r.id), dataset: { layer: `ft:${r.id}` },
+        onchange: e => { e.target.checked ? this.hiddenTypes.delete(r.id) : this.hiddenTypes.add(r.id); this.mapApi?.overlays[`ft:${r.id}`]?.on(e.target.checked); } }),
+        h("i.ft-line", { style: { background: r.colour.color } }), h("span.ft-name", r.name, h("span.meta", this.typeNote(r.id)))),
+      r.t && h("button.ft-edit", { title: `Rename, recolour or remove ${r.name}`, "aria-label": `Edit ${r.name}`, onclick: () => this.editFenceType(r.t) }, "✎"))),
+      h("div.sub.note", rows.length ? "A fence takes its type's colour. Give a fence its type in ✎ Edit." : "Name the kinds of fence here, or in a fence's ✎ Edit, and each is drawn in a colour of its own."),
+      h("button.btn.ft-add", { onclick: () => this.editFenceType(null) }, "＋ New fence type"));
+  },
+  // the type's own form over the layers panel, and back to the panel after
+  editFenceType(t) {
+    this.selected = null;
+    this.showForm(fenceTypeForm(this, t, { onDone: () => { this.done(); $("layers-sheet").classList.add("open"); } }));
+  },
+
   setSyncPill(cls, text) { $("sync-dot").className = `dot ${cls}`; $("sync-text").textContent = text; },
   async updateSyncSummary() {
     const el = $("sync-summary"); if (!el) return;
@@ -210,6 +324,7 @@ const app = {
 
   // --- UI ---
   render() {
+    this.renderFenceKey();                                            // before any rebuild, which reads its switches
     ({ jobs: renderJobs, water: renderWater, photos: renderPhotos, more: renderMore })[this.tab]?.(this);
     if (this.tab === "map" && this.selected && $("feature-sheet").classList.contains("open") && !this._formOpen) {
       const f = this.state.features.get(this.selected.id); if (f) renderFeature(this, f);
@@ -259,7 +374,8 @@ const app = {
     const f = this.state.features.get(fid); if (!f) return;
     this.showTab("map");
     const layer = this.mapApi.byId.get(fid);
-    if (layer) { const c = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter(); this.mapApi.map.setView(c, Math.max(this.mapApi.map.getZoom(), 1.5)); }
+    // going to look at a feature stops following you, or the next fix would take the map straight back
+    if (layer) { this.setFollow(false); const c = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter(); this.mapApi.map.setView(c, Math.max(this.mapApi.map.getZoom(), 1.5)); }
     this.openSheet(f, opts);
   },
 
@@ -427,7 +543,7 @@ const app = {
     }
     this.mapApi.gate.start(fence, g, edit, () => this.refreshGateBar());
     const mid = along(fence.geom.xy, edit.g.at + edit.g.width / 2), m = this.mapApi.map;
-    if (!m.getBounds().contains([mid[1], mid[0]])) m.setView([mid[1], mid[0]], Math.max(m.getZoom(), 2));
+    if (!m.getBounds().contains([mid[1], mid[0]])) { this.setFollow(false); m.setView([mid[1], mid[0]], Math.max(m.getZoom(), 2)); }
     $("map").classList.add("picking");
     $("gate-title").textContent = g ? `Moving ${g.name}` : `New gate on ${fence.name}`;
     $("pick-bar").hidden = true; $("shape-bar").hidden = true; $("gate-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
@@ -528,7 +644,15 @@ async function boot() {
   for (const b of document.querySelectorAll("[data-close]")) b.addEventListener("click", () => app.closeSheet());
   for (const el of document.querySelectorAll(".sheet")) dragSheet(el, () => app.closeSheet());
   $("btn-layers").addEventListener("click", () => { $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.toggle("open"); });
-  $("btn-locate").addEventListener("click", () => app.mapApi?.locate((lon, lat) => app.proj.forward(lon, lat)));
+  $("btn-locate").addEventListener("click", () => app.plot && app.locate());
+  // fingers on the map, for holding the map still under them while it follows you
+  $("map").addEventListener("pointerdown", e => app._down.add(e.pointerId), true);
+  for (const t of ["pointerup", "pointercancel"]) window.addEventListener(t, e => app._down.delete(e.pointerId), true);
+  window.addEventListener("blur", () => app._down.clear());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") { app._down.clear(); return; }
+    if (app.gps.watch !== null) app.keepAwake(true);
+  });
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());

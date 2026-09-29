@@ -20,6 +20,11 @@ that you point the app at from Settings; this repo is only the app.
 - A planning grid (1–10 m squares) square to a boundary line named in `features.json` and counted
   in metres from its corner, with snap-to-grid for drawing; features can be marked *planned* until
   they are built
+- ◎ follows you: the map keeps your position in the middle as you walk, and keeps the screen awake
+  while GPS is on; drag the map to look elsewhere, ◎ to come back to you, ◎ again to switch GPS off
+- Fence types: kinds of fence named and coloured once and shared by every device; each fence line
+  is drawn in its type's colour, and Layers has the key, with each type's fence count and length
+  and a switch to show it alone
 
 ## Data repo layout
 

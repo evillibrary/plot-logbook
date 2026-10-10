@@ -202,3 +202,14 @@ h1 { font-size: 20px; margin: 8px 0 12px; }
   .sheet .grip { display: none; }       /* a side panel does not pull down; the x closes it */
   .view:not([data-view="map"]) { max-width: 720px; margin: 0 auto; }
 }
+/* points on a line: one is a small disc in its category's colour, a 24 px target round it; a row
+   is white dots ringed in its line's colour, and a fence type's posts smaller dots, quiet. Rows and
+   posts go when zoomed out, where they would only thicken the line. */
+.on-pt { display: flex; align-items: center; justify-content: center; }
+.on-pt i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.4); }
+.on-pt.planned i { opacity: .75; border-style: dashed; border-color: #1e1f1a; }
+#map.z-lo .row-dot, #map.z-lo .post-dot { display: none; }
+.row-dot.planned, .post-dot.planned { opacity: .6; }
+.sh-h.pt-h i { width: 16px; height: 16px; }
+.layers .ft-cat { padding: 10px 0 2px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.posts { margin: 2px 0 8px; }

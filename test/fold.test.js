@@ -52,7 +52,7 @@ test("a planned feature stays planned until it is marked built, and nothing else
 });
 
 test("fence types: named and coloured once, renamed and recoloured for every fence of them; removed, their fences are untyped", async () => {
-  const { fenceColour, fenceTypeOf } = await import("../js/categories.js");
+  const { lineColour: fenceColour, lineTypeOf: fenceTypeOf } = await import("../js/categories.js");
   const line = (xy, ll = xy) => ({ type: "LineString", xy, ll });
   const s = fold(plot, [
     ev("2026-09-10T09:00:00+02:00", "fencetype.add", { fencetype: "t_stock", name: "Stock fence", colour: "yellow" }),
@@ -73,7 +73,7 @@ test("fence types: named and coloured once, renamed and recoloured for every fen
   assert.equal(fenceColour(s.features.get("f_a"), types).id, "red", "recolouring the type recolours its fences");
   assert.equal(fenceTypeOf(s.features.get("f_b"), types), null, "its type removed, a fence is untyped again");
   assert.equal(fenceColour(s.features.get("f_b"), types).id, "brown", "and drawn in the category's brown");
-  assert.equal(fenceColour(s.features.get("f_c"), types), null, "only fence lines take a type's colour");
+  assert.equal(fenceColour(s.features.get("f_c"), types).id, "red", "since 0.3.4 any line takes its type's colour, a pipe too");
   assert.equal(fenceColour({ type: "fences", geom: { type: "Point", xy: [0, 0] } }, types), null, "a fence post is a point, drawn as its category");
   assert.equal(fenceColour({ type: "fences", fencetype: "t_x", geom: line([[0, 0], [1, 0]]) }, new Map([["t_x", { colour: "tartan" }]])).id, "brown", "a colour this build does not know: brown");
 });

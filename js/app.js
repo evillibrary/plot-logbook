@@ -8,15 +8,16 @@ import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
 import { renderFeature, renderList } from "./ui/sheet.js";
-import { CATEGORIES, iconSvg, isFenceLine, fenceTypeOf, colourOf } from "./categories.js";
+import { CATEGORIES, CAT, iconSvg, isLine, lineTypeOf, colourOf, typeCat, typeNoun } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
-import { observeForm, photoForm, jobForm, waterForm, featureForm, fenceTypeForm } from "./ui/forms.js";
+import { observeForm, photoForm, jobForm, waterForm, featureForm, fenceTypeForm, rowForm } from "./ui/forms.js";
 import { describeAt } from "./grid.js";
 import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength } from "./geo.js";
-import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate } from "./gate.js";
+import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate, lengthOf } from "./gate.js";
+import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
 
-const VERSION = "0.3.3";
+const VERSION = "0.3.4";
 const $ = id => document.getElementById(id);
 const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
@@ -24,7 +25,7 @@ const app = {
   version: VERSION, settings: {}, source: null, plot: null, state: null, mapApi: null, proj: null,
   tab: "map", selected: null, pickMode: null, lastGps: null, syncing: false,
   gps: { watch: null, follow: false, first: false, far: false, toldFree: false, wake: null }, _down: new Set(),
-  hiddenTypes: new Set(), lastFenceType: null,          // fence types switched off in Layers; the type the last fence was given
+  hiddenTypes: new Set(), lastFenceType: null,          // line types switched off in Layers; the type the last fence was given
 
   get ctx() { return { author: this.settings.author || "unknown", device: this.settings.device || "unknown" }; },
   gpsNow() { return this.lastGps; },
@@ -90,6 +91,7 @@ const app = {
   refreshBars() {
     if (this.pickMode?.kind === "shape") this.refreshShapeBar();
     if (this.pickMode?.kind === "gate") this.refreshGateBar();
+    if (this.pickMode?.kind === "point") this.refreshPointBar();
   },
   // A phone that goes to sleep stops the GPS, so the screen stays on while ◎ is. The browser lets
   // go whenever the app is out of sight; it is asked for again on the way back (boot).
@@ -283,31 +285,55 @@ const app = {
       if (this._syncAgain) { this._syncAgain = false; this.sync(); }
     }
   },
-  // --- fence types: named and coloured once, shared, and a fence line takes its type's colour ---
-  // the live fence lines of a type ("none": those with no type, or one since removed) and how long they run
+  // --- line types: named and coloured once, shared, and a line takes its type's colour. A fence
+  // type can say how far apart its posts go and how many strands of wire it has, and then counts them.
+  // The live lines of a type ("none": fences with no type, or one since removed), how long they
+  // run, and for a fence type with post spacing, its posts; with strands, its wire.
   typeSummary(id) {
-    const fences = [...this.state.features.values()].filter(f => isFenceLine(f) && !f.retired && !f.deleted && (fenceTypeOf(f, this.state.fencetypes)?.id ?? "none") === id);
+    const t = this.state.fencetypes.get(id) ?? null;
+    const lines = [...this.state.features.values()].filter(f => isLine(f) && !f.retired && !f.deleted
+      && (lineTypeOf(f, this.state.fencetypes)?.id ?? (f.type === "fences" ? "none" : null)) === id);
     const run = fs => fs.reduce((s, f) => s + lineLength(f.geom.xy), 0);
-    return { n: fences.length, length: run(fences), planned: run(fences.filter(f => f.planned)), fences };
+    const posts = t?.every > 0 && typeCat(t) === "fences" ? lines.reduce((s, f) => s + this.postsOn(f, t).points, 0) : 0;
+    const length = run(lines);
+    return { t, n: lines.length, length, planned: run(lines.filter(f => f.planned)), posts, wire: t?.strands > 0 ? length * t.strands : 0, lines, fences: lines };
   },
   typeNote(id) {
     const s = this.typeSummary(id);
-    return `${s.n} fence${s.n === 1 ? "" : "s"} · ${fmtLength(s.length)}${s.planned ? ` (${fmtLength(s.planned)} of it planned)` : ""}`;
+    return `${s.n} ${typeNoun(s.t, s.n)} · ${fmtLength(s.length)}${s.planned ? ` (${fmtLength(s.planned)} of it planned)` : ""}`
+      + (s.posts ? ` · ${s.posts} posts` : "") + (s.wire ? ` · ${fmtLength(s.wire)} of wire` : "");
   },
-  // Layers → Fence types: the key to the fence colours. Each type with how many fences and how much
-  // fence it is, a switch to show or hide it on its own, and ✎ to rename, recolour or remove it.
+  // a fence's posts as its type spaces them: at the ends and corners, either side of each gate, and
+  // spread evenly no further apart than the type says between
+  postsOn(f, t = lineTypeOf(f, this.state.fencetypes)) {
+    return rowSummary(f.geom.xy, { every: t?.every, spacing: "even" }, this.cutsOn(f.id));
+  },
+  cutsOn(fid) { return this.gatesOn(fid).filter(g => !g.retired).map(g => [g.gate.at, g.gate.at + g.gate.width]); },
+  // Layers → Line types: the key to the line colours. Each type with how many lines and how much
+  // line it is, a switch to show or hide it on its own, and ✎ to rename, recolour or remove it;
+  // grouped by what they are for once there are types for more than fences.
   renderFenceKey() {
     const box = $("fence-key");
     if (!box || !this.state) return;
-    const rows = [...this.state.fencetypes.values()].sort((a, b) => a.name.localeCompare(b.name)).map(t => ({ id: t.id, name: t.name, colour: colourOf(t.colour), t }));
-    if (this.typeSummary("none").n) rows.push({ id: "none", name: "No type", colour: colourOf("brown") });
-    box.replaceChildren(...rows.map(r => h("div.ft-row", { dataset: { ft: r.id } },
+    const order = c => CATEGORIES.findIndex(x => x.id === c);
+    const types = [...this.state.fencetypes.values()].sort((a, b) => order(typeCat(a)) - order(typeCat(b)) || a.name.localeCompare(b.name));
+    const rows = types.map(t => ({ id: t.id, name: t.name, colour: colourOf(t.colour), t, cat: typeCat(t) }));
+    if (this.typeSummary("none").n) rows.splice(rows.filter(r => order(r.cat) <= order("fences")).length, 0, { id: "none", name: "No type", colour: colourOf("brown"), cat: "fences" });
+    const cats = new Set(rows.map(r => r.cat)), heads = cats.size > 1 || [...cats].some(c => c !== "fences");
+    let lastCat = null;
+    const out = [];
+    for (const r of rows) {
+      if (heads && r.cat !== lastCat) out.push(h("div.ft-cat", CAT[r.cat]?.name ?? r.cat));
+      lastCat = r.cat;
+      out.push(r);
+    }
+    box.replaceChildren(...out.map(r => r instanceof Node ? r : h("div.ft-row", { dataset: { ft: r.id } },
       h("label", h("input", { type: "checkbox", checked: !this.hiddenTypes.has(r.id), dataset: { layer: `ft:${r.id}` },
         onchange: e => { e.target.checked ? this.hiddenTypes.delete(r.id) : this.hiddenTypes.add(r.id); this.mapApi?.overlays[`ft:${r.id}`]?.on(e.target.checked); } }),
         h("i.ft-line", { style: { background: r.colour.color } }), h("span.ft-name", r.name, h("span.meta", this.typeNote(r.id)))),
       r.t && h("button.ft-edit", { title: `Rename, recolour or remove ${r.name}`, "aria-label": `Edit ${r.name}`, onclick: () => this.editFenceType(r.t) }, "✎"))),
-      h("div.sub.note", rows.length ? "A fence takes its type's colour. Give a fence its type in ✎ Edit." : "Name the kinds of fence here, or in a fence's ✎ Edit, and each is drawn in a colour of its own."),
-      h("button.btn.ft-add", { onclick: () => this.editFenceType(null) }, "＋ New fence type"));
+      h("div.sub.note", rows.length ? "A line takes its type's colour. Give a line its type in ✎ Edit." : "Name the kinds of fence (or pipe, or cable) here, or in a line's ✎ Edit, and each is drawn in a colour of its own."),
+      h("button.btn.ft-add", { onclick: () => this.editFenceType(null) }, "＋ New type"));
   },
   // the type's own form over the layers panel, and back to the panel after
   editFenceType(t) {
@@ -375,7 +401,9 @@ const app = {
     this.showTab("map");
     const layer = this.mapApi.byId.get(fid);
     // going to look at a feature stops following you, or the next fix would take the map straight back
-    if (layer) { this.setFollow(false); const c = layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter(); this.mapApi.map.setView(c, Math.max(this.mapApi.map.getZoom(), 1.5)); }
+    // (a row of points on a line too short to hold any has no bounds)
+    const c = layer && (layer.getLatLng ? layer.getLatLng() : layer.getBounds().isValid() ? layer.getBounds().getCenter() : null);
+    if (c) { this.setFollow(false); this.mapApi.map.setView(c, Math.max(this.mapApi.map.getZoom(), 1.5)); }
     this.openSheet(f, opts);
   },
 
@@ -457,9 +485,10 @@ const app = {
     $("shape-restart").disabled = !e.n;
     const carried = this.carriedGates(e), stuck = carried.filter(c => !c.r.fits);
     $("shape-save").disabled = !e.canSave(isNew) || stuck.length > 0;
-    // a gate that no longer fits, or will slide to stay on the fence, is said before Save
+    // a gate that no longer fits, or a gate or point that will slide to stay on the line, is said before Save
     const gates = [...stuck.map(c => `${c.g.name} (${c.g.gate.width.toFixed(1)} m) no longer fits: the fence is ${lineLength(e.pts).toFixed(1)} m.`),
-      ...carried.filter(c => c.r.fits && c.r.slid >= 0.05).map(c => `${c.g.name} will slide ${c.r.slid.toFixed(1)} m to stay on the fence.`)];
+      ...carried.filter(c => c.r.fits && c.r.slid >= 0.05).map(c => `${c.g.name} will slide ${c.r.slid.toFixed(1)} m to stay on the fence.`),
+      ...this.carriedPoints(e).filter(c => c.r.slid >= 0.05).map(c => `${c.p.name} will slide ${c.r.slid.toFixed(1)} m to stay on the line.`)];
     $("shape-note").textContent = [this.shapeNote(e), ...gates].join(" ");
   },
   // the gates on the fence being reshaped, each with where the new shape will carry it
@@ -467,6 +496,12 @@ const app = {
     const f = this.pickMode?.feature;
     if (!f || e.n < 2) return [];
     return this.gatesOn(f.id).map(g => ({ g, r: refit(g.gate, e.pts, e.flipped) }));
+  },
+  // the points standing on the line being reshaped, each with where the new shape will carry it
+  carriedPoints(e) {
+    const f = this.pickMode?.feature;
+    if (!f || e.n < 2 || f.geom?.type !== "LineString") return [];
+    return this.pointsOn(f.id).map(p => ({ p, r: refitPoint(p.on, e.pts, e.flipped) }));
   },
   // Under the buttons: the point in hand, or where the last one went, in tape-measure terms,
   // and what the next tap will do.
@@ -524,8 +559,11 @@ const app = {
     const gates = this.carriedGates(e).map(({ g, r }) => ({ g, gate: normGate(r.gate) }))
       .filter(({ g, gate }) => JSON.stringify(gate) !== JSON.stringify(normGate(g.gate)))
       .map(({ g, gate }) => ({ op: "feature.edit", feature: g.id, changes: { gate } }));
+    // and points on it the same way: a record only when one slid, or the line was turned round
+    const points = this.carriedPoints(e).filter(({ p, r }) => JSON.stringify(r.on) !== JSON.stringify(p.on))
+      .map(({ p, r }) => ({ op: "feature.edit", feature: p.id, changes: { on: r.on } }));
     this.leaveShape();
-    await this.recordAll([{ op: "feature.move", feature: f.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence }, ...gates]);
+    await this.recordAll([{ op: "feature.move", feature: f.id, geom: { ...geom, ll: geom.xy.map(toLL) }, confidence }, ...gates, ...points]);
     toast(`${f.name} reshaped: ${describeGeom(geom)}`);
     this.openSheet(this.state.features.get(f.id));
     this.applyUpdate();
@@ -600,10 +638,81 @@ const app = {
     this.applyUpdate();
     return true;
   },
+  // --- points on a line (points.js, drawn by map.js): one put on a line from its sheet, moved
+  // from its own; a row is set out in a form, since it is spread along the whole line ---
+  pointsOn(fid) { return [...this.state.features.values()].filter(p => p.on?.line === fid && !p.deleted); },
+  startPoint(line, p = null, edit = null) {
+    this.pickMode = { kind: "point", line, feature: p };
+    this.closeSheet();
+    if (!edit) {
+      // a new point starts where the line comes nearest the middle of the screen
+      const c = this.mapApi.map.getCenter();
+      edit = new PointEdit(line.geom.xy, p ? p.on.at : project(line.geom.xy, [c.lng, c.lat]));
+    }
+    this.mapApi.point.start(line, p, edit, () => this.refreshPointBar());
+    const at = along(line.geom.xy, edit.at), m = this.mapApi.map;
+    if (!m.getBounds().contains([at[1], at[0]])) { this.setFollow(false); m.setView([at[1], at[0]], Math.max(m.getZoom(), 2)); }
+    $("map").classList.add("picking");
+    $("point-title").textContent = p ? `Moving ${p.name}` : `New point on ${line.name}`;
+    $("pick-bar").hidden = true; $("shape-bar").hidden = true; $("gate-bar").hidden = true; $("point-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    this.refreshPointBar();
+  },
+  refreshPointBar() {
+    const e = this.mapApi?.point.edit(); if (!e) return;
+    const gps = this.lastGps;
+    $("point-summary").textContent = `· ${e.at.toFixed(1)} m from A · ${e.fromB.toFixed(1)} m from B`;
+    $("point-gps").disabled = !gps;
+    $("point-gps").title = gps ? `Put it on the line nearest my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
+    $("point-undo").disabled = !e.stack.length;
+    $("point-save").disabled = !!this.pickMode?.feature && !e.changed();
+    $("point-note").textContent = "Tap the map to put the point on the line there, or drag it.";
+  },
+  // Save: a new point goes on to be named, and can go back to the bar; a moved one is an edit of its on record
+  async savePoint() {
+    const { line, feature: p } = this.pickMode, e = this.mapApi.point.edit(), on = { line: line.id, at: e.at };
+    if (!p) {
+      this.leavePoint(); this.render();
+      this.showForm(featureForm(this, onGeom(line.geom, on), { on, line, fromB: e.fromB, viaGps: e.gps, back: () => this.startPoint(line, null, e) }));
+      return;
+    }
+    if (!e.changed()) return this.cancelPoint(false);
+    this.leavePoint();
+    await this.record({ op: "feature.edit", feature: p.id, changes: { on, ...(e.gps && p.confidence !== "low" ? { confidence: "low" } : {}) } });
+    toast(`${p.name}: ${on.at.toFixed(1)} m from A`);
+    this.openSheet(this.state.features.get(p.id));
+    this.applyUpdate();
+  },
+  leavePoint() {
+    const moving = !!this.pickMode?.feature;
+    this.mapApi.point.end(); this.pickMode = null;
+    $("point-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
+    if (moving) this._needsMap = true;                                // the point being moved was taken off the map
+  },
+  cancelPoint(ask = true) {
+    const { line, feature: p } = this.pickMode ?? {}, e = this.mapApi?.point.edit();
+    const work = e && (p ? e.changed() : e.stack.length > 0);
+    if (ask && work && !confirm(p ? `Throw away the changes to ${p.name}?` : "Throw away this point?")) return false;
+    this.leavePoint(); this.render();
+    const back = p ? this.state.features.get(p.id) : line && this.state.features.get(line.id);
+    if (back) this.openSheet(back);
+    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
+    return true;
+  },
+  // a row of points along a line: set out (and changed later) in a form
+  editRow(line, p = null) { this.showForm(rowForm(this, line, p)); },
+  // a name not yet taken: "Side fence gate", then "Side fence gate 2"
+  freshName(base) {
+    const taken = new Set([...this.state.features.values()].filter(f => !f.deleted).map(f => f.name.trim().toLowerCase()));
+    if (!taken.has(base.trim().toLowerCase())) return base;
+    let n = 2; while (taken.has(`${base} ${n}`.toLowerCase())) n++;
+    return `${base} ${n}`;
+  },
   async onMapClick(xy) {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
     if (mode.kind === "gate") { this.mapApi.gate.place(xy); return; }
+    if (mode.kind === "point") { this.mapApi.point.place(xy); return; }
     // drawing and reshaping snap for themselves: onto another fence first, then the grid
     if (mode.kind === "shape") { this.mapApi.shape.place(xy, { grid: this.snapping() }); return; }
     if (this.snapping()) xy = this.mapApi.grid.snap(xy);              // taps only: a GPS fix is a measurement
@@ -656,7 +765,7 @@ async function boot() {
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());
-  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
+  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate(), point: () => app.cancelPoint() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
   // the shape bar: each button changes the working copy, which is only recorded on Save
   const shapeDo = fn => () => { const e = app.mapApi?.shape.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.shape.redraw(); app.refreshShapeBar(); } };
   // a GPS fix is a measurement: never snapped or joined, and the point says it came by GPS
@@ -687,6 +796,14 @@ async function boot() {
   $("gate-undo").addEventListener("click", gateDo(e => e.undo()));
   $("gate-save").addEventListener("click", () => app.saveGate());
   $("gate-cancel").addEventListener("click", () => app.cancelGate());
+  // the point bar, the same way again
+  const pointDo = fn => () => { const e = app.mapApi?.point.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.point.redraw(); app.refreshPointBar(); } };
+  $("point-from-a").addEventListener("click", pointDo(e => { const d = metres("Metres from A to the point", e.at); if (d != null && !e.setFromA(d)) toast("That is off the line"); }));
+  $("point-from-b").addEventListener("click", pointDo(e => { const d = metres("Metres from B to the point", e.fromB); if (d != null && !e.setFromB(d)) toast("That is off the line"); }));
+  $("point-gps").addEventListener("click", pointDo(e => { if (!app.lastGps) return false; e.set(project(e.xy, app.lastGps.xy), { gps: true }); }));
+  $("point-undo").addEventListener("click", pointDo(e => e.undo()));
+  $("point-save").addEventListener("click", () => app.savePoint());
+  $("point-cancel").addEventListener("click", () => app.cancelPoint());
   // one toggle per category under "Features"
   const catBox = $("layer-categories");
   for (const c of CATEGORIES) {

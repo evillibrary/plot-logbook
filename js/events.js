@@ -3,15 +3,24 @@
 // source (log/<device>/<yyyy-mm>.jsonl), so two devices never race on one file.
 import { db } from "./db.js";
 import { gateGeom } from "./gate.js";
+import { onGeom } from "./points.js";
 
 // --- ids and time ---
 const CROCK = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+// Monotonic: two ids made in the same millisecond (a new fence type and the fence naming it,
+// saved together) sort in the order they were made, the second one more than the first. Until
+// 0.3.4 the random part could sort them the other way round, and `ts` is only to the second.
+let prev = { t: -1, r: null };
 export function ulid(t = Date.now()) {
+  let r;
+  if (t <= prev.t) {
+    t = prev.t; r = [...prev.r];
+    for (let i = 15; i >= 0; i--) { if (r[i] < 31) { r[i]++; break; } r[i] = 0; }
+  } else r = [...crypto.getRandomValues(new Uint8Array(16))].map(v => v & 31);
+  prev = { t, r };
   let s = "";
   for (let i = 9; i >= 0; i--) { s = CROCK[t % 32] + s; t = Math.floor(t / 32); }
-  const r = crypto.getRandomValues(new Uint8Array(16));
-  for (let i = 0; i < 16; i++) s += CROCK[r[i] & 31];
-  return s;
+  return s + r.map(v => CROCK[v]).join("");
 }
 export function isoNow(d = new Date()) {                     // local time with offset, e.g. 2026-09-15T14:02:11+02:00
   const p = n => String(n).padStart(2, "0"), o = -d.getTimezoneOffset(), sg = o >= 0 ? "+" : "-";
@@ -56,10 +65,11 @@ export function fold(plot, events) {
         break;
       }
       case "job.delete": jobs.delete(e.job); break;
-      case "fencetype.add": fencetypes.set(e.fencetype, { id: e.fencetype, name: e.name, colour: e.colour, since: e.ts, by: e.by }); break;
+      case "fencetype.add": fencetypes.set(e.fencetype, { id: e.fencetype, name: e.name, colour: e.colour, category: e.category ?? "fences", since: e.ts, by: e.by,
+        ...(e.every != null ? { every: e.every } : {}), ...(e.strands != null ? { strands: e.strands } : {}) }); break;
       case "fencetype.edit": if (fencetypes.has(e.fencetype)) Object.assign(fencetypes.get(e.fencetype), e.changes, { edited: e.ts }); break;
       case "fencetype.delete": fencetypes.delete(e.fencetype); break;
-      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by, ...(e.planned ? { planned: true } : {}), ...(e.gate ? { gate: e.gate } : {}), ...(e.fencetype ? { fencetype: e.fencetype } : {}) }); break;
+      case "feature.add": features.set(e.feature, { id: e.feature, name: e.name, type: e.type, folder: "Added in app", kml_id: "", source: e.source ?? "app", confidence: e.geom ? (e.confidence ?? "low") : "", photos: [], description: e.description ?? "", visible: true, geom: e.geom ?? null, origin: "app", since: e.ts, by: e.by, ...(e.planned ? { planned: true } : {}), ...(e.gate ? { gate: e.gate } : {}), ...(e.on ? { on: e.on } : {}), ...(e.fencetype ? { fencetype: e.fencetype } : {}) }); break;
       case "feature.move": { const f = features.get(e.feature); f.geom = e.geom; f.confidence = e.confidence ?? f.confidence; f.moved = e.ts; break; }
       case "feature.edit": Object.assign(features.get(e.feature), e.changes, { edited: e.ts }); break;
       case "feature.retire": { const f = features.get(e.feature); f.retired = e.ts; f.retireNote = e.note ?? ""; break; }
@@ -76,6 +86,17 @@ export function fold(plot, events) {
     const fence = features.get(f.gate.fence);
     if (!fence || fence.deleted || fence.retired) f.hiddenWith = f.gate.fence;
     else if (fence.geom?.type === "LineString") f.geom = gateGeom(fence.geom, f.gate);
+  }
+  // A point on a line stands on it as it runs now, and a row is spread along it clear of its
+  // gateways; both go with their line, retired or deleted, and come back with it.
+  const cuts = new Map();
+  for (const g of features.values()) if (g.gate && !g.deleted && !g.retired && typeof g.gate.at === "number" && typeof g.gate.width === "number")
+    (cuts.get(g.gate.fence) ?? cuts.set(g.gate.fence, []).get(g.gate.fence)).push([g.gate.at, g.gate.at + g.gate.width]);
+  for (const f of features.values()) {
+    if (!f.on) continue;
+    const line = features.get(f.on.line);
+    if (!line || line.deleted || line.retired) f.hiddenWith = f.on.line;
+    else if (line.geom?.type === "LineString") f.geom = onGeom(line.geom, f.on, cuts.get(line.id) ?? []);
   }
   // a note or reading against a feature that never existed has no sheet to appear on
   for (const e of [...obs, ...water]) if (e.feature && !features.has(e.feature)) dropped.push(e);

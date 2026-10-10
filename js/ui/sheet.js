@@ -1,11 +1,12 @@
 // The feature sheet: what a tapped feature is, what has happened to it, and the actions.
 // Also the searchable list of every feature, and the way back to anything not yet placed.
 import { h, clear, fmtWhen, toast } from "./dom.js";
-import { observeForm, photoForm, jobForm, waterForm, editForm, fenceTypeForm, liveFeatures } from "./forms.js";
+import { observeForm, photoForm, jobForm, waterForm, editForm, fenceTypeForm, liveFeatures, typeTitle } from "./forms.js";
 import * as photos from "../photos.js";
-import { CATEGORIES, CAT, catOf, catLook, fenceTypeOf, colourOf, iconSvg } from "../categories.js";
-import { describeGeom } from "../geo.js";
+import { CATEGORIES, CAT, catOf, catLook, lineTypeOf, isLine, typeCat, colourOf, iconSvg } from "../categories.js";
+import { describeGeom, fmtLength, lineLength } from "../geo.js";
 import { GATE_KIND, lengthOf } from "../gate.js";
+import { isRow, rowSummary, rowNote } from "../points.js";
 
 const confLabel = (c, point) => ({ high: "position: high", medium: "position: medium", low: `position: low — check and ${point ? "move" : "redraw"}` })[c] ?? c;
 const ico = (cat, size = 26) => { const d = h("span.ic"); d.innerHTML = iconSvg(cat, size); return d; };
@@ -13,14 +14,14 @@ const ico = (cat, size = 26) => { const d = h("span.ic"); d.innerHTML = iconSvg(
 export function renderFeature(app, f) {
   const body = clear(document.getElementById("feature-body"));
   const events = app.state.byFeature.get(f.id) ?? [];
-  const cat = catOf(f), ft = fenceTypeOf(f, app.state.fencetypes);
+  const cat = catOf(f), ft = lineTypeOf(f, app.state.fencetypes);
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
     f.gate ? h("span.chip", `${GATE_KIND[f.gate.kind]?.name ?? "Gate"} · ${f.gate.width.toFixed(1)} m`) : f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
-    // its fence type, in the colour the map draws it; a tap renames or recolours the type
-    ft && h("button.chip.ftype", { title: `Fence type: tap to rename or recolour ${ft.name}`, onclick: () => app.showForm(fenceTypeForm(app, ft)) },
+    // its line type, in the colour the map draws it; a tap renames or recolours the type
+    ft && h("button.chip.ftype", { title: `${typeTitle(typeCat(ft))}: tap to rename or recolour ${ft.name}`, onclick: () => app.showForm(fenceTypeForm(app, ft)) },
       h("i.sw", { style: { background: colourOf(ft.colour).color } }), ft.name),
-    f.hiddenWith && h("span.chip.lo", "off the map with its fence"),
+    f.hiddenWith && h("span.chip.lo", f.on ? "off the map with its line" : "off the map with its fence"),
     f.planned && h("span.chip.plan", "planned, not built yet"),
     // lines and areas only say so when low: every one of them carried a silent "medium" until GPS vertices were tracked.
     // A plan has no measured position to be confident about.
@@ -45,11 +46,15 @@ export function renderFeature(app, f) {
       : e.kind === "job.done" ? `☑ done: ${it.title}` : "";
     return h("li", h("time", `${fmtWhen(e.ts)} · ${it.by ?? ""}`), text);
   }));
-  // a fence's gates, and for a gate, its fence
-  const isFence = f.type === "fences" && f.geom?.type === "LineString";
+  // a fence's gates, and for a gate, its fence; a line's points, and for a point, its line
+  const isFence = f.type === "fences" && isLine(f), aLine = isLine(f);
   const gates = isFence ? app.gatesOn(f.id).filter(g => !g.retired) : [];
   const fence = f.gate ? app.state.features.get(f.gate.fence) : null;
-  const counts = { photos: photoItems.length, notes: events.filter(e => e.kind === "observe").length, jobs: events.filter(e => e.kind === "job").length, readings: events.filter(e => e.kind === "water").length, gates: gates.length };
+  const points = aLine ? app.pointsOn(f.id).filter(q => !q.retired) : [];
+  const line = f.on ? app.state.features.get(f.on.line) : null, onLine = line?.geom?.type === "LineString" && !f.hiddenWith;
+  // a fence whose type spaces its posts: how many, and how much wire
+  const posts = isFence && ft?.every > 0 ? app.postsOn(f, ft) : null;
+  const counts = { photos: photoItems.length, notes: events.filter(e => e.kind === "observe").length, jobs: events.filter(e => e.kind === "job").length, readings: events.filter(e => e.kind === "water").length, gates: gates.length, "points on it": points.length };
   const attached = Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
 
   const actions = f.deleted ? h("div.actions", h("button.primary", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast("restored"); app.openSheet(app.state.features.get(f.id)); } }, "↩ Restore"))
@@ -57,20 +62,25 @@ export function renderFeature(app, f) {
         h("button.primary", { onclick: () => app.showForm(observeForm(app, f)) }, "✎ Note"),
         h("button", { onclick: () => app.showForm(photoForm(app, f)) }, "📷 Photo"),
         h("button", { onclick: () => app.showForm(jobForm(app, f)) }, "☑ Job"),
-        f.type === "water" ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, "💧 Reading") : h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit")),
+        f.type === "water" && !f.on ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, "💧 Reading") : h("button", { onclick: () => edit() }, "✎ Edit")),
       h("div.actions",
         f.planned && !f.retired && h("button.primary", { onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: false } }); toast(`${f.name} marked as built`); } }, "✓ Built"),
-        f.type === "water" && h("button", { onclick: () => app.showForm(editForm(app, f)) }, "✎ Edit"),
+        f.type === "water" && !f.on && h("button", { onclick: () => edit() }, "✎ Edit"),
         !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
-        f.geom?.type === "Point" && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
+        f.geom?.type === "Point" && !f.on && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
+        f.on && !isRow(f.on) && onLine && h("button", { title: "Move it along its line", onclick: () => app.startPoint(line, f) }, "⤧ Move"),
         f.gate && fence?.geom?.type === "LineString" && !f.hiddenWith && h("button", { title: "Move the gate, change its width, kind or swing", onclick: () => app.startGate(fence, f) }, "⤧ Move"),
-        !f.gate && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
+        !f.gate && !f.on && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
         isFence && !f.retired && h("button", { onclick: () => app.startGate(f) }, "＋ Gate"),
+        aLine && !f.retired && h("button", { title: "One point on the line: a hatch, a valve, a strainer post", onclick: () => app.startPoint(f) }, "＋ Point"),
+        aLine && !f.retired && h("button", { title: "A row of points along the line: posts every 3 m, hatches every 30 m", onclick: () => app.editRow(f) }, "＋ Row"),
         // the way back from ✓ Built: a fence drawn as if it stood that is really still an idea
         !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, "◌ Planned"),
         f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")
           : h("button", { onclick: async () => { const note = prompt(`Retire ${f.name}? It stays in the history with its ${attached}, but leaves the map. Add a note:`); if (note !== null) { await app.record({ op: "feature.retire", feature: f.id, note }); app.closeSheet(); toast(`${f.name} retired`); } } }, "⏏ Retire"),
         h("button", { style: { color: "var(--danger)" }, onclick: () => app.deleteFeature(f, attached) }, "🗑 Delete")));
+
+  function edit() { f.on && isRow(f.on) && onLine ? app.editRow(line, f) : app.showForm(editForm(app, f)); }
 
   body.append(...[
     app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
@@ -79,10 +89,19 @@ export function renderFeature(app, f) {
     // where a gate stands on its fence, in tape-measure terms, with the way to the fence
     fence?.geom?.type === "LineString" && h("p.note.gate-at", `📐 ${f.gate.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(fence.geom.xy) - f.gate.at - f.gate.width).toFixed(1)} m from B, on`,
       h("button.linkish", { onclick: () => app.goTo(fence.id) }, fence.name)),
+    // where a point stands on its line, or how a row is spread along it
+    onLine && !isRow(f.on) && h("p.note.gate-at", `📐 ${f.on.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(line.geom.xy) - f.on.at).toFixed(1)} m from B, on`,
+      h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
+    onLine && isRow(f.on) && h("p.note.gate-at", `📐 ${rowNote(rowSummary(line.geom.xy, f.on, app.cutsOn(line.id)))} · ${f.on.spacing === "exact" ? "exactly" : "no more than"} ${f.on.every} m apart along`,
+      h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
+    posts && h("p.note.posts", `${rowNote(posts, { posts: true })}${ft.strands ? ` · ${fmtLength(lineLength(f.geom.xy) * ft.strands)} of wire (${ft.strands} strands)` : ""}`),
     f.description && h("p.desc", f.description),
     gates.length ? h("div.gates", h("div.note", `Gates (${gates.length})`), ...gates.sort((a, b) => a.gate.at - b.gate.at).map(g =>
       h("div.list-item", { onclick: () => app.goTo(g.id) }, h("div", { style: { flex: 1 } }, g.name,
         h("div.meta", `${g.planned ? "planned · " : ""}${GATE_KIND[g.gate.kind]?.name ?? "Gate"} · ${g.gate.width.toFixed(1)} m · ${g.gate.at.toFixed(1)} m from A`))))) : null,
+    points.length ? h("div.gates.points", h("div.note", `On this line (${points.length})`), ...points.sort((a, b) => (a.on.at ?? -1) - (b.on.at ?? -1)).map(q =>
+      h("div.list-item", { onclick: () => app.goTo(q.id) }, h("div", { style: { flex: 1 } }, q.name,
+        h("div.meta", `${q.planned ? "planned · " : ""}${isRow(q.on) ? `${q.geom?.xy?.length ?? 0} along it, ${q.on.every} m apart` : `${q.on.at.toFixed(1)} m from A`}`))))) : null,
     f.origin === "kml" && f.photos?.length && !photoItems.length ? h("p.note", `Survey photos: ${f.photos.join(", ")}`) : null,
     actions,
     photoItems.length ? strip : null,
@@ -106,7 +125,7 @@ export function renderList(app, restore = false) {
     clear(listEl);
     const q = search.value.trim().toLowerCase();
     // a fence is found by its type's name too ("all the stock fence")
-    const typeName = f => fenceTypeOf(f, app.state.fencetypes)?.name ?? "";
+    const typeName = f => lineTypeOf(f, app.state.fencetypes)?.name ?? "";
     const all = liveFeatures(app).filter(f => !q || f.name.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q) || typeName(f).toLowerCase().includes(q));
     // Collapsed until you ask: thirty-odd features in one scroll is no way to find anything,
     // and a typed query opens whatever it matched.

@@ -48,13 +48,24 @@ export const FENCE_COLOURS = [
 ];
 const FENCE_COLOUR = Object.fromEntries(FENCE_COLOURS.map(c => [c.id, c]));
 export const colourOf = id => FENCE_COLOUR[id] ?? FENCE_COLOUR.brown;     // an id a build does not know: brown
-export const isFenceLine = f => f.type === "fences" && f.geom?.type === "LineString";
-// a fence line's type (types: the fold's fencetypes), or null: none given, or since removed
-export const fenceTypeOf = (f, types) => isFenceLine(f) && f.fencetype ? types?.get(f.fencetype) ?? null : null;
-// the colour a fence line is drawn in; null for anything else, which keeps its category's
-export const fenceColour = (f, types) => isFenceLine(f) ? colourOf(fenceTypeOf(f, types)?.colour) : null;
-// the category in a fence's colour, for its icon in the sheet and the list
-export const catLook = (f, types) => { const c = catOf(f), fc = fenceColour(f, types); return fc ? { ...c, color: fc.color } : c; };
+// Since 0.3.4 any line can have a type, not only a fence: a pipe, a cable, a hedge. A type belongs
+// to the category it was made for (`category`, "fences" for the types of 0.3.3), which is the
+// list a line is offered; a line keeps its type's colour if its category changes later. The
+// records are still `fencetype.*`, the name they shipped with.
+// A line: a LineString that is not a gate standing in one.
+export const isLine = f => f.geom?.type === "LineString" && !f.gate;
+export const isFenceLine = f => f.type === "fences" && isLine(f);
+// a line's type (types: the fold's fencetypes), or null: none given, or since removed
+export const lineTypeOf = (f, types) => isLine(f) && f.fencetype ? types?.get(f.fencetype) ?? null : null;
+// The colour a line is drawn in: its type's; with none, brown for a fence. Null for anything
+// else, which keeps its category's colour.
+export const lineColour = (f, types) => { if (!isLine(f)) return null; const t = lineTypeOf(f, types); return t ? colourOf(t.colour) : f.type === "fences" ? colourOf("brown") : null; };
+// the category in a line's colour, for its icon in the sheet and the list
+export const catLook = (f, types) => { const c = catOf(f), lc = lineColour(f, types); return lc ? { ...c, color: lc.color } : c; };
+// a type's category: what it is for, so which lines are offered it
+export const typeCat = t => t?.category ?? "fences";
+// "fence" for a fence type's lines, "line" for any other's
+export const typeNoun = (t, n) => (typeCat(t) === "fences" ? "fence" : "line") + (n === 1 ? "" : "s");
 
 // SVG for a point icon: a disc in the category colour with the glyph in white.
 export function iconSvg(cat, size = 28) {

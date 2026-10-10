@@ -76,6 +76,7 @@ export const fmtArea = m2 => m2 >= 10000 ? `${(m2 / 10000).toFixed(2)} ha (${tho
 export function describeGeom(geom) {
   if (!geom) return "no position";
   if (geom.type === "Point") return "point";
+  if (geom.type === "MultiPoint") return `${geom.xy.length} point${geom.xy.length === 1 ? "" : "s"}`;
   if (geom.type === "LineString") return fmtLength(lineLength(geom.xy));
   if (geom.type === "Polygon") return fmtArea(polygonArea(geom.xy));
   return geom.type;

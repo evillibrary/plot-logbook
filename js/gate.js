@@ -93,6 +93,13 @@ export function gateGeom(fence, gate) {
   return withLL ? { type: "LineString", xy, ll } : { type: "LineString", xy };
 }
 
+// The place d metres along a line ({xy, ll?}, with c its cumulative()), rounded as gateGeom
+// rounds: xy to the centimetre, and ll, when the line carries a matching one, to 1e-7 degree.
+export function pointAlong(line, c, d) {
+  const q = locate(c, clamp(d, 0, c[c.length - 1])), xy = point(line.xy, q).map(cm);
+  return Array.isArray(line.ll) && line.ll.length === line.xy.length ? { xy, ll: point(line.ll, q).map(deg) } : { xy };
+}
+
 // What to draw: the two posts, and by kind the leaves as they hang closed, the arc each sweeps
 // opening (with the ground it needs, and where it stands open), or a sliding leaf's track: it
 // runs back past the post it slides to, a leaf's length, just off the fence on its `opens` side.

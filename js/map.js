@@ -1,11 +1,12 @@
 // The drawn plan: a Leaflet map in the plot's own metric grid (E, N), north-up, with the
 // feature model rendered as vectors and imagery/boundaries as toggleable overlays.
 import { IdbTileLayer } from "./tiles.js";
-import { CATEGORIES, catOf, iconSvg, fenceColour, fenceTypeOf, isFenceLine } from "./categories.js";
+import { CATEGORIES, catOf, iconSvg, lineColour, lineTypeOf, isLine } from "./categories.js";
 import { lineLength, polygonArea, fmtLength, fmtArea, centroid, interiorPoint } from "./geo.js";
 import { gridFrame, gridExtent, gridLevels, gridLines, clipStart, snapToGrid, gridLabel } from "./grid.js";
 import { ShapeEdit, joinTo } from "./shape.js";
 import { gateDrawing, gaps, project, refit, along } from "./gate.js";
+import { onGeom, refitPoint, isRow } from "./points.js";
 
 const ll = xy => L.latLng(xy[1], xy[0]);           // [E, N] -> Leaflet latlng (lat = N, lng = E)
 const lls = xys => xys.map(ll);
@@ -48,10 +49,15 @@ export function buildMap(container, plot, tiling, opts = {}) {
   const live = new Map(plot.features.map(f => [f.id, f]));
   const gatesOf = new Map();
   for (const f of plot.features) if (f.gate) (gatesOf.get(f.gate.fence) ?? gatesOf.set(f.gate.fence, []).get(f.gate.fence)).push(f);
-  // fence lines by type ("none" for those without), each a group inside Fences, so Layers can
-  // show one type alone
+  // and the points standing on each line
+  const pointsOf = new Map();
+  for (const f of plot.features) if (f.on) (pointsOf.get(f.on.line) ?? pointsOf.set(f.on.line, []).get(f.on.line)).push(f);
+  // lines by type ("none" for fences without one), each a group inside its category's, so Layers
+  // can show one type alone; a type's lines can be in more than one category
   const types = plot.fencetypes ?? new Map(), typeGroups = new Map();
-  const typeGroup = id => typeGroups.get(id) ?? typeGroups.set(id, L.layerGroup().addTo(g("fences"))).get(id);
+  const typeGroup = (cat, id) => typeGroups.get(`${cat}|${id}`) ?? typeGroups.set(`${cat}|${id}`, L.layerGroup().addTo(g(cat))).get(`${cat}|${id}`);
+  // a line's gateways, [[d0, d1]], for spreading posts along it clear of them
+  const cutsOf = id => (gatesOf.get(id) ?? []).map(gt => [gt.gate.at, gt.gate.at + gt.gate.width]);
 
   // A feature swallowed taps that were meant for the map, so nothing could be placed inside
   // an area — a cow in a paddock, a crop in a bed. During a pick the tap falls through.
@@ -66,8 +72,9 @@ export function buildMap(container, plot, tiling, opts = {}) {
   function styleFor(f) {
     const c = catOf(f), plan = f.planned ? { className: "planned" } : {};
     if (f.geom.type === "LineString") {
-      if (f.type === "fences") { const col = fenceColour(f, types).color; return f.planned ? { color: col, weight: 3.5, opacity: 0.8, dashArray: "9 6", ...plan } : { color: col, weight: 4 }; }
-      return { color: c.color, weight: 3, dashArray: "2 7", ...(f.planned ? { opacity: 0.65 } : {}), ...plan };
+      const col = lineColour(f, types)?.color ?? c.color;
+      if (f.type === "fences") return f.planned ? { color: col, weight: 3.5, opacity: 0.8, dashArray: "9 6", ...plan } : { color: col, weight: 4 };
+      return { color: col, weight: 3, dashArray: "2 7", ...(f.planned ? { opacity: 0.65 } : {}), ...plan };
     }
     return { color: c.color, weight: 2, fillColor: c.color, fillOpacity: fillFor(f, false), ...(f.planned ? { dashArray: "7 5" } : {}), ...plan };
   }
@@ -79,7 +86,9 @@ export function buildMap(container, plot, tiling, opts = {}) {
   function draw(f) {
     if (!f.geom) return null;
     if (f.gate && live.get(f.gate.fence)?.geom?.type === "LineString") return drawGate(f);
-    const c = catOf(f), xy = f.geom.xy, group = isFenceLine(f) ? typeGroup(fenceTypeOf(f, types)?.id ?? "none") : g(c.id);
+    if (f.on && (f.geom.type === "MultiPoint" || f.geom.type === "Point")) return drawOn(f);
+    const c = catOf(f), xy = f.geom.xy, t = lineTypeOf(f, types);
+    const group = t ? typeGroup(c.id, t.id) : isLine(f) && f.type === "fences" ? typeGroup("fences", "none") : g(c.id);
     const cls = f.planned ? "planned" : "", tail = f.planned ? " · planned" : "";
     let layer;
     if (f.geom.type === "Point") {
@@ -89,11 +98,18 @@ export function buildMap(container, plot, tiling, opts = {}) {
       // open where a gate stands: a built one, since a planned gate is not cut into the fence yet
       const cuts = (gatesOf.get(f.id) ?? []).filter(gt => !gt.planned).map(gt => [gt.gate.at, gt.gate.at + gt.gate.width]);
       const at = cuts.length ? gaps(xy, cuts).map(lls) : lls(xy), st = styleFor(f);
-      // a pale fence colour runs on a dark edge, the same dashes and all
-      layer = fenceColour(f, types)?.edge
+      // a pale colour runs on a dark edge, the same dashes and all
+      layer = lineColour(f, types)?.edge
         ? L.featureGroup([L.polyline(at, { ...st, color: "#1e1f1a", weight: st.weight + 2.5, opacity: 0.55, interactive: false }), L.polyline(at, st)])
         : L.polyline(at, st);
       label(layer, `${f.name} · ${fmtLength(lineLength(xy))}${tail}`, cls);
+      // a fence whose type says how far apart its posts go has them drawn, quietly, with its type
+      if (t?.every > 0 && f.type === "fences") {
+        const posts = onGeom(f.geom, { line: f.id, every: t.every, spacing: "even" }, cutsOf(f.id)).xy;
+        const col = lineColour(f, types).color;
+        L.featureGroup(posts.map(q => L.circleMarker(ll(q), { radius: 2.5, color: col === "#ffffff" ? "#1e1f1a" : col, weight: 1.5, fillColor: "#fff", fillOpacity: 1,
+          interactive: false, className: `post-dot${f.planned ? " planned" : ""}` }))).addTo(group);
+      }
     } else {
       layer = L.polygon(lls(xy), styleFor(f));
       const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c, 28, f.planned), riseOnHover: true, keyboard: false });
@@ -133,6 +149,29 @@ export function buildMap(container, plot, tiling, opts = {}) {
     return layer;
   }
 
+  // A point on a line: a small disc in its category's colour, on the line, with its name. A row
+  // of them: a white dot ringed in its line's colour at each, named once, in the middle. Both are
+  // tapped as a whole.
+  function drawOn(f) {
+    const c = catOf(f), line = live.get(f.on.line), col = (line && lineColour(line, types)?.color) ?? c.color;
+    const plan = f.planned ? " planned" : "", cls = f.planned ? "planned" : "";
+    let layer;
+    if (f.geom.type === "Point") {
+      layer = L.marker(ll(f.geom.xy), { riseOnHover: true, keyboard: false,
+        icon: L.divIcon({ className: `on-pt${plan}`, html: `<i style="background:${c.color}"></i>`, iconSize: [24, 24], iconAnchor: [12, 12], tooltipAnchor: [8, 0] }) });
+      label(layer, f.name + (f.planned ? " · planned" : ""), cls);
+    } else {
+      const dots = f.geom.xy.map(q => L.circleMarker(ll(q), { radius: 3.5, color: col === "#ffffff" ? "#1e1f1a" : col, weight: 2, fillColor: "#fff", fillOpacity: 1, className: `row-dot${plan}` }));
+      layer = L.featureGroup(dots);
+      if (dots.length) label(dots[Math.floor((dots.length - 1) / 2)], `${f.name} · ${dots.length}${f.planned ? " · planned" : ""}`, cls);
+    }
+    layer.feature = f;
+    layer.on("click", e => tapped(e, f, layer));
+    layer.addTo(g(c.id));
+    byId.set(f.id, layer);
+    return layer;
+  }
+
   // --- base: zones, context, boundaries ---
   for (const z of plot.zones ?? []) {
     L.polygon(lls(z.geom.xy), { pane: "zones", stroke: false, fillColor: z.zone === "forest" ? "#b9cf9c" : "#dfe9c8", fillOpacity: 1, interactive: false }).addTo(g("zones"));
@@ -153,8 +192,9 @@ export function buildMap(container, plot, tiling, opts = {}) {
     else if (b.geom.type === "LineString") L.polyline(lls(b.geom.xy), style).addTo(grp);
     else L.polygon(lls(b.geom.xy), style).addTo(grp);
   }
-  for (const f of plot.features) if (!f.gate) draw(f);
+  for (const f of plot.features) if (!f.gate && !f.on) draw(f);
   for (const f of plot.features) if (f.gate) draw(f);                 // over the fences they stand in
+  for (const f of plot.features) if (f.on) draw(f);                   // and points on the lines over those
 
   g("zones").addTo(map); g("context").addTo(map);
   for (const c of CATEGORIES) g(c.id).addTo(map);
@@ -170,8 +210,10 @@ export function buildMap(container, plot, tiling, opts = {}) {
     grid: { on: v => setGrid(v) },
   };
   for (const c of CATEGORIES) overlays[c.id] = { on: toggle(c.id) };
-  // one per fence type (Layers → Fence types), inside the Fences category's own switch
-  for (const id of [...types.keys(), "none"]) overlays[`ft:${id}`] = { on: v => v ? g("fences").addLayer(typeGroup(id)) : g("fences").removeLayer(typeGroup(id)) };
+  // one per line type (Layers → Line types), inside each category's own switch
+  for (const id of [...types.keys(), "none"]) overlays[`ft:${id}`] = { on: v => {
+    for (const [k, grp] of typeGroups) { const [cat, tid] = k.split("|"); if (tid === id) v ? g(cat).addLayer(grp) : g(cat).removeLayer(grp); }
+  } };
   // with imagery under the plan, the ground zones go and filled shapes become outlines
   function setOrthoMode(v) {
     overImagery = v;
@@ -245,6 +287,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
       if (t > 0 && (dir === "u" ? Math.abs(y - box.y0) : Math.abs(x - box.x0)) > 0.5) continue;
       const text = gridLabel(l.val);
       const r = { x: x + 3, y: y + (dir === "u" ? 2 : -14), w: text.length * 6 + 4, h: 13 };
+      // one that would run off the screen's edge would be cut, and read as a smaller number
+      if (r.x + r.w > box.x1 + 4 || r.y + r.h > box.y1 + 40) continue;
       if (taken.some(q => r.x < q.x + q.w && q.x < r.x + r.w && r.y < q.y + q.h && q.y < r.y + r.h)) continue;
       taken.push(r);
       const s = document.createElement("span"), at = map.containerPointToLayerPoint([r.x, r.y]);
@@ -293,7 +337,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   // it in hand, then tap where it goes (the finger does not hide the target that way), or drag
   // it. A new line or area starts with no points. Reshaping, the shape as it was stays faintly
   // underneath; the app rebuilds the map when reshaping ends, which restores it.
-  const shaping = { edit: null, f: null, onChange: null, lines: [], gates: [], gatePrev: null, layer: null, edge: null, closing: null, mids: [], area: null, dragFrom: null };
+  const shaping = { edit: null, f: null, onChange: null, lines: [], gates: [], points: [], gatePrev: null, layer: null, edge: null, closing: null, mids: [], area: null, dragFrom: null };
   const shapeGroup = L.layerGroup();
   function startShape(f, onChange, { type = "line", edit = null } = {}) {
     endShape();
@@ -305,7 +349,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
     if (f) areaPins.find(a => a.pin.feature?.id === f.id)?.pin.remove();
     // a fence's gates ride along with the working shape instead of standing where they were
     shaping.gates = f ? gatesOf.get(f.id) ?? [] : [];
-    for (const gt of shaping.gates) byId.get(gt.id)?.remove();
+    shaping.points = f ? pointsOf.get(f.id) ?? [] : [];
+    for (const gt of [...shaping.gates, ...shaping.points]) byId.get(gt.id)?.remove();
     shapeGroup.addTo(map);
     drawShape();
   }
@@ -347,16 +392,23 @@ export function buildMap(container, plot, tiling, opts = {}) {
     });
     drawGatePreviews();
   }
-  // each gate where the reshaped fence will carry it (red if it no longer fits)
+  // each gate where the reshaped fence will carry it (red if it no longer fits), and each point
+  // on the line, or row of them, where it will stand
   function drawGatePreviews() {
     shaping.gatePrev?.remove(); shaping.gatePrev = null;
     const e = shaping.edit;
-    if (!shaping.gates.length || e.n < 2) return;
-    const grp = L.layerGroup();
+    if (!(shaping.gates.length || shaping.points.length) || e.n < 2) return;
+    const grp = L.layerGroup(), cuts = [];
     for (const gt of shaping.gates) {
       const r = refit(gt.gate, e.pts, e.flipped), d = gateDrawing(e.pts, r.gate), col = r.fits ? catOf(gt).color : "#b3261e";
+      cuts.push([r.gate.at, r.gate.at + r.gate.width]);
       L.polyline(lls(d.posts), { pane: "shape", color: col, weight: 7, lineCap: "butt", interactive: false }).addTo(grp);
       for (const a of d.arcs) L.polyline(lls(a), { pane: "shape", color: col, weight: 1.5, dashArray: "3 4", interactive: false }).addTo(grp);
+    }
+    for (const pt of shaping.points) {
+      const geom = onGeom({ xy: e.pts }, refitPoint(pt.on, e.pts, e.flipped).on, cuts), col = catOf(pt).color;
+      for (const q of geom.type === "Point" ? [geom.xy] : geom.xy)
+        L.circleMarker(ll(q), { pane: "shape", radius: isRow(pt.on) ? 3 : 6, color: isRow(pt.on) ? col : "#fff", weight: 2, fillColor: isRow(pt.on) ? "#fff" : col, fillOpacity: 1, interactive: false }).addTo(grp);
     }
     shaping.gatePrev = grp.addTo(shapeGroup);
   }
@@ -428,6 +480,38 @@ export function buildMap(container, plot, tiling, opts = {}) {
     });
   }
 
+  // --- putting a point on its line (points.js): the line picked out with its ends lettered, the
+  // point as a handle, and the tape distances to either end written along the line. A tap puts it
+  // at the nearest place on the line; it can be dragged there too. A point being moved is hidden
+  // meanwhile; the app rebuilds the map afterwards.
+  const pointing = { edit: null, line: null, onChange: null };
+  const pointGroup = L.layerGroup();
+  function startPoint(line, f, edit, onChange) {
+    endPoint();
+    Object.assign(pointing, { edit, line, onChange });
+    if (f) byId.get(f.id)?.remove();
+    pointGroup.addTo(map);
+    drawPointEdit();
+  }
+  function endPoint() { pointGroup.clearLayers(); pointGroup.remove(); pointing.edit = null; pointing.line = null; }
+  const pointChanged = () => { drawPointEdit(); pointing.onChange?.(); };
+  function drawPointEdit() {
+    pointGroup.clearLayers();
+    const e = pointing.edit; if (!e) return;
+    const xy = pointing.line.geom.xy, add = l => l.addTo(pointGroup);
+    add(L.polyline(lls(xy), { pane: "shape", color: "#e0392b", weight: 8, opacity: 0.22, interactive: false }));
+    for (const [t, q] of [["A", xy[0]], ["B", xy[xy.length - 1]]])
+      add(L.marker(ll(q), { pane: "shape", interactive: false, keyboard: false, icon: L.divIcon({ className: "sh-h sh-end gt-end", html: `<i>${t}</i>`, iconSize: [40, 40] }) }));
+    const tape = (d0, d1, text) => { if (d1 - d0 >= 0.05) add(L.marker(ll(along(xy, (d0 + d1) / 2)), { pane: "shape", interactive: false, keyboard: false, icon: L.divIcon({ className: "gt-tape", html: `<span>${text}</span>`, iconSize: [0, 0] }) })); };
+    tape(0, e.at, `${e.at.toFixed(1)} m from A`);
+    tape(e.at, e.L, `${e.fromB.toFixed(1)} m from B`);
+    const hnd = L.marker(ll(along(xy, e.at)), { pane: "shape", draggable: true, autoPan: false, keyboard: false,
+      icon: L.divIcon({ className: "sh-h sel pt-h", html: "<i></i>", iconSize: [40, 40] }) });
+    hnd.on("click", ev => L.DomEvent.stop(ev));
+    hnd.on("dragend", ev => { e.set(project(xy, toXY(ev.target.getLatLng()))); pointChanged(); });
+    add(hnd);
+  }
+
   const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
@@ -440,5 +524,8 @@ export function buildMap(container, plot, tiling, opts = {}) {
       place: (xy, o) => { const e = shaping.edit; if (!e) return false; e.sel != null ? placePoint(e.sel, xy, o) : addPoint(xy, o); return true; } },
     // a tap on the map while placing a gate: the post in hand goes there, or else the whole gate
     gate: { start: startGate, end: endGate, edit: () => gating.edit, redraw: drawGateEdit,
-      place: xy => { const e = gating.edit; if (!e) return false; const d = project(gating.fence.geom.xy, xy); e.sel != null ? e.postAt(e.sel, d) : e.centreAt(d); gateChanged(); return true; } } };
+      place: xy => { const e = gating.edit; if (!e) return false; const d = project(gating.fence.geom.xy, xy); e.sel != null ? e.postAt(e.sel, d) : e.centreAt(d); gateChanged(); return true; } },
+    // a tap on the map while placing a point on a line: it goes to the nearest place on the line
+    point: { start: startPoint, end: endPoint, edit: () => pointing.edit, redraw: drawPointEdit,
+      place: xy => { const e = pointing.edit; if (!e) return false; e.set(project(pointing.line.geom.xy, xy)); pointChanged(); return true; } } };
 }

@@ -4,7 +4,7 @@ import { h, clear, fmtWhen, toast } from "./dom.js";
 import { observeForm, photoForm, jobForm, waterForm, editForm, fenceTypeForm, liveFeatures, typeTitle } from "./forms.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, catOf, catLook, lineTypeOf, isLine, typeCat, colourOf, iconSvg } from "../categories.js";
-import { describeGeom, fmtLength, lineLength } from "../geo.js";
+import { describeGeom, fmtLength, fmtArea, lineLength } from "../geo.js";
 import { GATE_KIND, lengthOf } from "../gate.js";
 import { isRow, rowSummary, rowNote } from "../points.js";
 
@@ -15,9 +15,13 @@ export function renderFeature(app, f) {
   const body = clear(document.getElementById("feature-body"));
   const events = app.state.byFeature.get(f.id) ?? [];
   const cat = catOf(f), ft = lineTypeOf(f, app.state.fencetypes);
+  // an area that follows its fences: the ground they enclose now
+  const face = f.area && !f.deleted ? app.areaFace(f) : null;
   const chips = h("div.chips",
     h("span.chip", { style: { background: cat.color, color: "#fff" } }, cat.name),
-    f.gate ? h("span.chip", `${GATE_KIND[f.gate.kind]?.name ?? "Gate"} · ${f.gate.width.toFixed(1)} m`) : f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
+    f.gate ? h("span.chip", `${GATE_KIND[f.gate.kind]?.name ?? "Gate"} · ${f.gate.width.toFixed(1)} m`)
+      : face ? h("span.chip", fmtArea(face.area)) : f.geom && f.geom.type !== "Point" && h("span.chip", describeGeom(f.geom)),
+    f.area && !face && h("span.chip.lo", "its fences no longer close round it"),
     // its line type, in the colour the map draws it; a tap renames or recolours the type
     ft && h("button.chip.ftype", { title: `${typeTitle(typeCat(ft))}: tap to rename or recolour ${ft.name}`, onclick: () => app.showForm(fenceTypeForm(app, ft)) },
       h("i.sw", { style: { background: colourOf(ft.colour).color } }), ft.name),
@@ -70,7 +74,8 @@ export function renderFeature(app, f) {
         f.geom?.type === "Point" && !f.on && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
         f.on && !isRow(f.on) && onLine && h("button", { title: "Move it along its line", onclick: () => app.startPoint(line, f) }, "⤧ Move"),
         f.gate && fence?.geom?.type === "LineString" && !f.hiddenWith && h("button", { title: "Move the gate, change its width, kind or swing", onclick: () => app.startGate(fence, f) }, "⤧ Move"),
-        !f.gate && !f.on && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
+        !f.gate && !f.on && !f.area && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
+        face && !f.retired && h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face, f) }, "÷ Divide"),
         isFence && !f.retired && h("button", { onclick: () => app.startGate(f) }, "＋ Gate"),
         aLine && !f.retired && h("button", { title: "One point on the line: a hatch, a valve, a strainer post", onclick: () => app.startPoint(f) }, "＋ Point"),
         aLine && !f.retired && h("button", { title: "A row of points along the line: posts every 3 m, hatches every 30 m", onclick: () => app.editRow(f) }, "＋ Row"),
@@ -94,6 +99,8 @@ export function renderFeature(app, f) {
       h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
     onLine && isRow(f.on) && h("p.note.gate-at", `📐 ${rowNote(rowSummary(line.geom.xy, f.on, app.cutsOn(line.id)))} · ${f.on.spacing === "exact" ? "exactly" : "no more than"} ${f.on.every} m apart along`,
       h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
+    face && fencesRound(app, face),
+    !face && f.area && app.areas(true).gaps.length ? h("p.note", `Open ends near it: ${app.areas(true).gaps.filter(g => g.d <= 10).slice(0, 3).map(g => app.gapText(g)).join("; ")}.`) : null,
     posts && h("p.note.posts", `${rowNote(posts, { posts: true })}${ft.strands ? ` · ${fmtLength(lineLength(f.geom.xy) * ft.strands)} of wire (${ft.strands} strands)` : ""}`),
     f.description && h("p.desc", f.description),
     gates.length ? h("div.gates", h("div.note", `Gates (${gates.length})`), ...gates.sort((a, b) => a.gate.at - b.gate.at).map(g =>
@@ -151,4 +158,28 @@ export function renderList(app, restore = false) {
   search.addEventListener("input", () => { asLeft = null; draw(); });
   draw();
   return h("div", { dataset: { autofocus: "off" } }, h("h2", "Features"), search, listEl);
+}
+
+// what goes round an enclosure, each a way to its fence, and how sure its size is
+function fencesRound(app, face) {
+  const fs = face.lines.map(id => app.state.features.get(id)).filter(Boolean);
+  // a fence traced half a metre out either way moves the edge by that much all round
+  const plus = Math.max(1, Math.round(face.perimeter * 0.5 / 10) * 10);
+  return h("div.area-about",
+    h("p.note.round", `📐 ${fmtLength(face.perimeter)} round, inside `, ...fs.flatMap((f, k) => [k ? (k === fs.length - 1 ? " and " : ", ") : "", h("button.linkish", { onclick: () => app.goTo(f.id) }, f.name)])),
+    h("p.note", `Good to about ±${fmtArea(plus)}: the fences are traced to about half a metre.${face.holes.length ? ` Less ${face.holes.length} fenced-off patch${face.holes.length === 1 ? "" : "es"} inside.` : ""}`));
+}
+
+// The card for an enclosure picked out by a tap: its size, what goes round it, and what to do with it.
+export function areaCard(app, face, at) {
+  const planned = face.lines.some(id => app.state.features.get(id)?.planned);
+  return h("div", { dataset: { autofocus: "off" } },
+    h("h2", "Enclosed area"),
+    h("div.chips", h("span.chip", fmtArea(face.area)), planned && h("span.chip.plan", "planned fences round it")),
+    fencesRound(app, face),
+    h("p.note", "Tap it again to name it."),
+    h("div.actions",
+      h("button.primary", { onclick: () => app.nameArea(face, at) }, "✎ Name it"),
+      h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face) }, "÷ Divide"),
+      h("button", { onclick: () => app.closeSheet() }, "Close")));
 }

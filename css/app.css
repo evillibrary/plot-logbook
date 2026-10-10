@@ -233,3 +233,9 @@ h1 { font-size: 20px; margin: 8px 0 12px; }
 .bd-measure span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 600 11px/1 system-ui, sans-serif; color: #1e1f1a;
   background: rgba(255,255,255,.88); padding: 2px 5px; border-radius: 3px; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 #map.z-lo .bd-measure { display: none; }
+/* an enclosure picked out by a tap, and the parts of one being divided: their sizes in their middles */
+.area-tag span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 13px/1 system-ui, sans-serif; color: #1e1f1a;
+  background: rgba(255,255,255,.92); padding: 4px 7px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.dv-row select { flex: 1; min-width: 0; }
+#divide-bar .check { margin: 8px 0 6px; font-size: 14px; }
+.area-about .round { margin-bottom: 2px; line-height: 1.7; }

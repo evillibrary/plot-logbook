@@ -111,10 +111,12 @@ export function buildMap(container, plot, tiling, opts = {}) {
           interactive: false, className: `post-dot${f.planned ? " planned" : ""}` }))).addTo(group);
       }
     } else {
-      layer = L.polygon(lls(xy), styleFor(f));
+      // an area that follows its fences is drawn as they enclose it now, holes and all; one whose
+      // fences no longer close round it, as it was last saved, its edge dashed red
+      layer = L.polygon(f.holes?.length ? [lls(xy), ...f.holes.map(lls)] : lls(xy), { ...styleFor(f), ...(f.open ? { color: "#b3261e", dashArray: "4 5" } : {}) });
       const pin = L.marker(ll(interiorPoint(xy)), { icon: iconFor(c, 28, f.planned), riseOnHover: true, keyboard: false });
       areaPins.push({ pin, cat: c, xy, planned: !!f.planned });
-      label(pin, (f.type === "structures" ? f.name : `${f.name} · ${fmtArea(polygonArea(xy))}`) + tail, cls);
+      label(pin, (f.type === "structures" ? f.name : `${f.name} · ${fmtArea(f.areaM2 ?? polygonArea(xy))}`) + tail, cls);
       pin.feature = f;
       pin.on("click", e => tapped(e, f, layer));
       pin.addTo(group);
@@ -512,11 +514,36 @@ export function buildMap(container, plot, tiling, opts = {}) {
     add(hnd);
   }
 
+  // --- an enclosure picked out by a tap (areas.js): its edge bold, its ground tinted, its size in
+  // its middle; and the same enclosure being divided, the cuts across it and each part's size
+  map.createPane("areaHi").style.zIndex = 652;          // over the names, so its size reads
+  map.getPane("areaHi").style.pointerEvents = "none";
+  const hiGroup = L.layerGroup().addTo(map);
+  const quietly = { pane: "areaHi", interactive: false };
+  const areaTag = (at, html, cls = "") => L.marker(ll(at), { ...quietly, keyboard: false, icon: L.divIcon({ className: `area-tag ${cls}`, html: `<span>${html}</span>`, iconSize: [0, 0] }) });
+  function highlight(face, text) {
+    hiGroup.clearLayers();
+    if (!face) return;
+    L.polygon([lls(face.ring), ...face.holes.map(lls)], { ...quietly, color: "#ff6a00", weight: 4, fillColor: "#ffb300", fillOpacity: 0.28 }).addTo(hiGroup);
+    if (text) areaTag(interiorPoint(face.ring), text).addTo(hiGroup);
+  }
+  function showDivide(face, d) {
+    hiGroup.clearLayers();
+    if (!face || !d) return;
+    L.polygon([lls(face.ring), ...face.holes.map(lls)], { ...quietly, color: "#ff6a00", weight: 3, fillOpacity: 0 }).addTo(hiGroup);
+    d.parts.forEach((pt, k) => {
+      if (pt.ring.length < 3) return;
+      L.polygon(lls(pt.ring), { ...quietly, stroke: false, fillColor: k % 2 ? "#ffd166" : "#ff9f1c", fillOpacity: 0.3 }).addTo(hiGroup);
+      areaTag(interiorPoint(pt.ring), `${String.fromCharCode(65 + k)} · ${fmtArea(pt.area)}`).addTo(hiGroup);
+    });
+    d.cuts.forEach((c, k) => L.polyline(lls(c), { ...quietly, color: d.outside?.[k] ? "#b3261e" : "#1e1f1a", weight: 3.5, dashArray: "9 6" }).addTo(hiGroup));
+  }
+
   const center = f => f.geom.type === "Point" ? ll(f.geom.xy) : ll(centroid(f.geom.xy));
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
 
-  return { map, groups, byId, overlays, setImagery, showMe, follow: followMe, setFollowing, home, ll, center, pxPerM,
+  return { map, groups, byId, overlays, setImagery, showMe, follow: followMe, setFollowing, home, ll, center, pxPerM, highlight, showDivide,
     grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
       snap: xy => snapToGrid(frame, xy, gridSize) },
     // a tap on the map while shaping: the point in hand goes there, or with none in hand the next point is added

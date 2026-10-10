@@ -7,18 +7,19 @@ import { installTileLayer, tileManifest } from "./tiles.js";
 import * as events from "./events.js";
 import * as photos from "./photos.js";
 import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
-import { renderFeature, renderList } from "./ui/sheet.js";
+import { renderFeature, renderList, areaCard } from "./ui/sheet.js";
 import { CATEGORIES, CAT, iconSvg, isLine, lineTypeOf, colourOf, typeCat, typeNoun } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
 import { renderMore } from "./ui/more.js";
 import { observeForm, photoForm, jobForm, waterForm, featureForm, fenceTypeForm, rowForm } from "./ui/forms.js";
 import { describeAt } from "./grid.js";
-import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength } from "./geo.js";
+import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength, interiorPoint } from "./geo.js";
 import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate, lengthOf } from "./gate.js";
 import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
+import { buildFaces, faceAt, divideStrips, divideFan, sideDir, corners } from "./areas.js";
 import { BoardView, TOOLS, BOARD_COLOURS, TRACK_WIDTHS, loadBoards, saveMine, emptyBoard, pushBoard, pullBoards, strokeMark, markGeom, newId, measure, measureText } from "./board.js";
 
-const VERSION = "0.3.5";
+const VERSION = "0.3.6";
 const $ = id => document.getElementById(id);
 const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
@@ -201,6 +202,7 @@ const app = {
 
   async refold() {
     this.state = events.fold(this.plot, await events.allEvents());
+    this._rev = (this._rev ?? 0) + 1;                              // what the enclosures were worked out from is out of date
   },
 
   async buildMap() {
@@ -209,7 +211,9 @@ const app = {
     const tiling = im ? { origin: im.origin, m_per_px_zoom0: im.m_per_px_zoom0 } : { origin: [this.plot.home.bounds[0][0], this.plot.home.bounds[1][1]], m_per_px_zoom0: 0.2 };
     const view = this.mapApi ? { center: this.mapApi.map.getCenter(), zoom: this.mapApi.map.getZoom() } : null;
     this.mapApi?.map.remove();
-    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom), fencetypes: this.state.fencetypes };
+    // an area that follows its fences is drawn as they enclose it now
+    const show = f => { if (!f.area) return f; const face = this.areaFace(f); return face ? { ...f, geom: { type: "Polygon", xy: [...face.ring, face.ring[0]] }, holes: face.holes, areaM2: face.area } : { ...f, open: true }; };
+    const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom).map(show), fencetypes: this.state.fencetypes };
     this.mapApi = buildMap($("map"), live, tiling, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
       picking: () => !!this.pickMode,
@@ -258,6 +262,7 @@ const app = {
     for (const ev of evs) await events.append(ev, this.ctx);
     if (evs.some(ev => /^(feature|fencetype)\./.test(ev.op))) this._needsMap = true;
     await this.refold();
+    if (evs.some(ev => /^feature\./.test(ev.op))) await this.followFences();
     this.render();
     this.updateSyncSummary();
     clearTimeout(this._syncT); this._syncT = setTimeout(() => this.sync(), 1500);
@@ -362,6 +367,7 @@ const app = {
   render() {
     this.renderFenceKey();                                            // before any rebuild, which reads its switches
     this.renderBoardKey();
+    this.renderAreaNote();
     ({ jobs: renderJobs, water: renderWater, photos: renderPhotos, more: renderMore })[this.tab]?.(this);
     if (this.tab === "map" && this.selected && $("feature-sheet").classList.contains("open") && !this._formOpen) {
       const f = this.state.features.get(this.selected.id); if (f) renderFeature(this, f);
@@ -380,6 +386,7 @@ const app = {
     if (name === "map") this.mapApi?.map.invalidateSize();
   },
   openSheet(f, { fromList = false } = {}) {
+    this.clearArea();
     this.selected = f; this._formOpen = false; this._listShown = false; this._fromList = fromList;
     $("layers-sheet").classList.remove("open");
     $("feature-sheet").scrollTop = 0;
@@ -387,6 +394,7 @@ const app = {
   },
   closeSheet() {
     $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false; this._listShown = false;
+    this.clearArea();
     // leaving a feature opened from the list another way: drop the history entry that back would have used
     if (this._fromList) { this._fromList = false; if (history.state?.pl === "list") history.back(); }
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
@@ -719,6 +727,165 @@ const app = {
     let n = 2; while (taken.has(`${base} ${n}`.toLowerCase())) n++;
     return `${base} ${n}`;
   },
+  // --- areas enclosed by fences (areas.js): a tap inside fences picks out the ground they enclose and
+  // its size, a second tap names it. A named area keeps a point inside it (`area.at`) and follows its
+  // fences: drawn as they enclose it now, its saved outline brought up to date when this phone
+  // changes a fence. ---
+  areaTol() { return this.settings.areaTol ?? 1; },
+  plannedShown() { return document.querySelector('#layers-sheet input[data-layer="planned"]')?.checked !== false; },
+  // the enclosures and the ends left open, with planned fences or without (cached until anything changes)
+  areas(planned = this.plannedShown()) {
+    const key = `${this._rev}|${this.areaTol()}|${planned}`;
+    this._areas ??= new Map();
+    if (!this._areas.has(key)) {
+      if (this._areas.size > 4) this._areas.clear();
+      const lines = [...this.state.features.values()].filter(f => isLine(f) && f.type === "fences" && !f.retired && !f.deleted && (planned || !f.planned)).map(f => ({ id: f.id, name: f.name, xy: f.geom.xy }));
+      this._areas.set(key, buildFaces(lines, this.areaTol()));
+    }
+    return this._areas.get(key);
+  },
+  // A named area's enclosure now (planned fences counted), or null when its fences no longer close
+  // round it. Its point inside then lies in the enclosure round it instead, which it must not take
+  // for its own: an enclosure more than 2.5 times the size it was saved at is someone else's. (It
+  // may shrink as far as it likes: dividing it does that.)
+  areaFace(f) {
+    if (!f?.area?.at) return null;
+    const face = faceAt(this.areas(true).faces, f.area.at);
+    return face && f.geom?.type === "Polygon" && face.area > 2.5 * polygonArea(f.geom.xy) ? null : face;
+  },
+  // A fence changed here: every named area whose enclosure changed with it is saved anew, so the
+  // log (and Google Earth) keeps up, as a gate rides along with its fence.
+  async followFences() {
+    const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7)), r2 = v => Math.round(v * 100) / 100;
+    const moves = [];
+    for (const f of this.state.features.values()) {
+      if (!f.area || f.deleted || f.retired || f.geom?.type !== "Polygon") continue;
+      const face = this.areaFace(f); if (!face) continue;
+      const xy = [...face.ring, face.ring[0]].map(p => [r2(p[0]), r2(p[1])]);
+      if (xy.length === f.geom.xy.length && Math.abs(polygonArea(xy) - polygonArea(f.geom.xy)) < 0.05 && Math.abs(lineLength(xy) - lineLength(f.geom.xy)) < 0.05) continue;
+      moves.push({ op: "feature.move", feature: f.id, geom: { type: "Polygon", xy, ll: xy.map(toLL) }, confidence: f.confidence });
+    }
+    if (!moves.length) return;
+    for (const ev of moves) await events.append(ev, this.ctx);
+    await this.refold();
+    this._needsMap = true;
+  },
+  // A tap on the map with nothing else going on: the enclosure it lands in is picked out, with its
+  // size; a second tap on it names it; a tap in another picks that one instead.
+  tapArea(xy) {
+    const { faces, gaps } = this.areas();
+    const face = faceAt(faces, xy);
+    if (!face) {
+      this.closeSheet();
+      const [[e0, n0], [e1, n1]] = this.plot.home.bounds, inside = xy[0] >= e0 && xy[0] <= e1 && xy[1] >= n0 && xy[1] <= n1;
+      const g = inside && this.nearestGap(xy, gaps);
+      if (g) toast(`Not a closed area: ${g}`, 5000);
+      return;
+    }
+    if (this.selArea?.key === face.key) return this.nameArea(face, this.selArea.at);
+    this.selArea = { ...face, at: xy };
+    this.mapApi.highlight(face, fmtArea(face.area));
+    this.showForm(areaCard(this, face, xy));
+    this._areaCard = true;
+  },
+  clearArea() { if (!this.selArea && !this._areaCard) return; this.selArea = null; this._areaCard = false; this.mapApi?.highlight(null); },
+  // the open end nearest a tap, in words: "Back fence stops 1.4 m short of Side fence"
+  nearestGap(xy, gaps) {
+    const g = gaps.filter(g => Number.isFinite(g.d) && g.d <= 10).sort((a, b) => Math.hypot(a.p[0] - xy[0], a.p[1] - xy[1]) - Math.hypot(b.p[0] - xy[0], b.p[1] - xy[1]))[0];
+    return g ? this.gapText(g) : null;
+  },
+  gapText(g) { const name = id => this.state.features.get(id)?.name ?? "a fence"; return `${name(g.line)} stops ${g.d.toFixed(1)} m short of ${name(g.to)}`; },
+  nameArea(face, at) {
+    const planned = face.lines.some(id => this.state.features.get(id)?.planned);
+    const ring = [...face.ring, face.ring[0]].map(p => [+p[0].toFixed(2), +p[1].toFixed(2)]);
+    this._areaCard = false;
+    this.showForm(featureForm(this, { type: "Polygon", xy: ring }, { type: "paddocks", area: { at: at.map(v => +v.toFixed(2)) }, areaM2: face.area, planned,
+      fences: face.lines.map(id => this.state.features.get(id)?.name).filter(Boolean) }));
+  },
+  // --- dividing an enclosure into equal parts: strips parallel to one of its fences or across it,
+  // or wedges fanning from a gate or corner. The cuts are shown as they would go, each part's size,
+  // and where each cut meets the fences in tape-measure terms; Save makes them planned fences. ---
+  startDivide(face, f = null) {
+    this.closeSheet();
+    const gates = face.lines.flatMap(id => this.gatesOn(id).filter(g => !g.retired && g.geom?.type === "LineString"))
+      .map(g => ({ id: `g:${g.id}`, name: g.name, p: along(g.geom.xy, lineLength(g.geom.xy) / 2) }))
+      .filter(g => face.ring.some((p, k) => { const q = face.ring[(k + 1) % face.ring.length], dx = q[0] - p[0], dy = q[1] - p[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((g.p[0] - p[0]) * dx + (g.p[1] - p[1]) * dy) / l2)) : 0; return Math.hypot(g.p[0] - p[0] - t * dx, g.p[1] - p[1] - t * dy) < 0.5; }));
+    const name = id => this.state.features.get(id)?.name ?? "a join";
+    const cs = corners(face).map((c, k) => ({ id: `c:${k}`, name: `Corner of ${name(c.lines[0])} and ${name(c.lines[1])}`, p: c.p }));
+    const fences = face.lines.map(id => ({ id, name: name(id), len: face.ring.reduce((s, p, k) => s + (face.edges[k] === id ? Math.hypot(face.ring[(k + 1) % face.ring.length][0] - p[0], face.ring[(k + 1) % face.ring.length][1] - p[1]) : 0), 0) }))
+      .sort((a, b) => b.len - a.len);
+    this.pickMode = { kind: "divide", face, feature: f, n: 3, method: "parallel", fences, points: [...gates, ...cs], ref: fences[0]?.id, d: null };
+    $("divide-title").textContent = `Divide ${f ? f.name : "this area"} (${fmtArea(face.area)})`;
+    $("dv-parts").replaceChildren(...[2, 3, 4, 5, 6].map(n => h("option", { value: String(n), selected: n === 3 }, `into ${n}`)));
+    $("dv-method").replaceChildren(h("option", { value: "parallel" }, "strips along"), h("option", { value: "across" }, "strips across"), h("option", { value: "fan" }, "fanning from"));
+    $("dv-name-row").hidden = !f;
+    if (f) $("dv-name").checked = true;
+    $("map").classList.add("picking");
+    $("pick-bar").hidden = true; $("divide-bar").hidden = false; $("btn-add").hidden = true; $("jobs-strip").hidden = true;
+    this.refreshDivide();
+  },
+  refreshDivide() {
+    const m = this.pickMode; if (m?.kind !== "divide") return;
+    const refs = m.method === "fan" ? m.points : m.fences;
+    if (!refs.some(r => r.id === m.ref)) m.ref = refs[0]?.id;
+    $("dv-ref").replaceChildren(...refs.map(r => h("option", { value: r.id, selected: r.id === m.ref }, r.name)));
+    $("dv-method").value = m.method; $("dv-parts").value = String(m.n);
+    if (m.feature) $("dv-name-text").textContent = m.n === 2 ? `Name the new part ${m.feature.name} 2` : `Name the new parts ${m.feature.name} 2 to ${m.n}`;
+    const face = m.face;
+    let d = null;
+    if (m.method === "fan") { const pt = m.points.find(p => p.id === m.ref); d = pt ? divideFan(face.ring, pt.p, m.n) : null; }
+    else { const dir = sideDir(face, m.ref); if (dir) d = divideStrips(face.ring, m.method === "parallel" ? dir : [-dir[1], dir[0]], m.n); }
+    m.d = d;
+    this.mapApi.showDivide(face, d);
+    $("dv-save").disabled = !d || !d.cuts.length;
+    if (!d) { $("dv-note").textContent = "Pick a fence or a point to divide by."; return; }
+    const parts = d.parts.map((p, k) => `${String.fromCharCode(65 + k)} ${fmtArea(p.area)}`).join(" · ");
+    const cuts = d.cuts.map((c, k) => `Cut ${k + 1}, ${lineLength(c).toFixed(1)} m: from ${this.tapeAt(face, c[0])} to ${this.tapeAt(face, c[1])}.`);
+    const warn = [d.outside?.some(Boolean) && "A cut shown red leaves the area round a bend: try strips instead.", face.holes.length && "The ground fenced off inside is counted in the parts."].filter(Boolean);
+    $("dv-note").textContent = [`${parts}.`, ...cuts, ...warn].join(" ");
+  },
+  // where a point on an enclosure's edge is, measured as a tape along the fence it is on
+  tapeAt(face, p) {
+    let best = null;
+    face.ring.forEach((a, k) => { const b = face.ring[(k + 1) % face.ring.length], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0, dd = Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); if (!best || dd < best.dd) best = { dd, k }; });
+    const f = best && this.state.features.get(face.edges[best.k]);
+    return f?.geom?.type === "LineString" ? `${project(f.geom.xy, p).toFixed(1)} m along ${f.name} from A` : "the join between two fences";
+  },
+  async saveDivide() {
+    const m = this.pickMode; if (m?.kind !== "divide" || !m.d) return;
+    const toLL = xy => this.unproject(xy).map(v => +v.toFixed(7)), r2 = p => [+p[0].toFixed(2), +p[1].toFixed(2)];
+    const base = m.feature?.name ?? "Area";
+    const recs = m.d.cuts.map((c, k) => { const xy = c.map(r2); return { op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: `${base} divider${m.d.cuts.length > 1 ? ` ${k + 1}` : ""}`,
+      type: "fences", confidence: "medium", source: "app-map", description: `Divides ${base} into ${m.n} equal parts`, geom: { type: "LineString", xy, ll: xy.map(toLL) }, planned: true }; });
+    // the parts other than the one the area's own point is in, named after it
+    if (m.feature && $("dv-name").checked) {
+      let k = 2;
+      for (const pt of m.d.parts) {
+        if (pt.ring.length < 3 || faceAt([{ ring: pt.ring, holes: [], outer: 0 }], m.feature.area?.at ?? [NaN, NaN])) continue;
+        const xy = [...pt.ring, pt.ring[0]].map(r2), at = r2(interiorPoint(pt.ring));
+        recs.push({ op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: this.freshName(`${m.feature.name} ${k++}`), type: m.feature.type, confidence: "medium", source: "app-map",
+          description: "", geom: { type: "Polygon", xy, ll: xy.map(toLL) }, planned: true, area: { at } });
+      }
+    }
+    this.leaveDivide();
+    await this.recordAll(recs);
+    toast(`${m.d.cuts.length} planned fence${m.d.cuts.length === 1 ? "" : "s"} added: ${m.d.parts.map(p => fmtArea(p.area)).join(", ")}`, 5000);
+    if (m.feature) this.openSheet(this.state.features.get(m.feature.id));
+  },
+  leaveDivide() {
+    this.pickMode = null; this.mapApi.showDivide(null);
+    $("divide-bar").hidden = true; $("btn-add").hidden = false; $("map").classList.remove("picking");
+    this.render(); this.applyUpdate();
+  },
+  cancelDivide() { const f = this.pickMode?.feature; this.leaveDivide(); if (f) this.openSheet(this.state.features.get(f.id) ?? f); },
+  renderAreaNote() {
+    const el = $("area-note"); if (!el || !this.state) return;
+    $("area-tol").value = String(this.areaTol());
+    const { faces, gaps } = this.areas(true), tol = this.areaTol();
+    const near = gaps.filter(g => g.d > tol && g.d <= 5).sort((a, b) => a.d - b.d);
+    el.textContent = `${faces.length} enclosed area${faces.length === 1 ? "" : "s"} found. Tap inside one to see its size.`
+      + (near.length ? ` Not closed: ${near.slice(0, 4).map(g => this.gapText(g)).join("; ")}.` : "");
+  },
   // --- the whiteboard (board.js): sketch over the map without recording anything. Inside it the
   // features take no taps; Layers still shows and hides them. Marks are this phone's, kept and
   // synced on their own; an erased mark is gone. ---
@@ -836,9 +1003,15 @@ const app = {
       ...(rows.length ? [] : [h("div.sub.note", "Nothing sketched yet. ✎ on the map opens the whiteboard.")]));
   },
   async onMapClick(xy) {
-    if (!this.pickMode) { this.closeSheet(); return; }
+    if (!this.pickMode) {
+      // with an enclosure's card up, taps go on choosing (a second on the same one names it);
+      // with anything else open, a tap on the map closes it, as it always has
+      if (this._areaCard) return this.tapArea(xy);
+      if ($("feature-sheet").classList.contains("open") || $("layers-sheet").classList.contains("open")) { this.closeSheet(); return; }
+      return this.tapArea(xy);
+    }
     const mode = this.pickMode;
-    if (mode.kind === "board") return;
+    if (mode.kind === "board" || mode.kind === "divide") return;
     if (mode.kind === "gate") { this.mapApi.gate.place(xy); return; }
     if (mode.kind === "point") { this.mapApi.point.place(xy); return; }
     // drawing and reshaping snap for themselves: onto another fence first, then the grid
@@ -893,7 +1066,7 @@ async function boot() {
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());
-  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate(), point: () => app.cancelPoint(), board: () => app.leaveBoard() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
+  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate(), point: () => app.cancelPoint(), board: () => app.leaveBoard(), divide: () => app.cancelDivide() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
   // the shape bar: each button changes the working copy, which is only recorded on Save
   const shapeDo = fn => () => { const e = app.mapApi?.shape.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.shape.redraw(); app.refreshShapeBar(); } };
   // a GPS fix is a measurement: never snapped or joined, and the point says it came by GPS
@@ -932,6 +1105,13 @@ async function boot() {
   $("point-undo").addEventListener("click", pointDo(e => e.undo()));
   $("point-save").addEventListener("click", () => app.savePoint());
   $("point-cancel").addEventListener("click", () => app.cancelPoint());
+  // dividing an area: each choice redraws the cuts
+  $("dv-parts").addEventListener("change", e => { app.pickMode.n = +e.target.value; app.refreshDivide(); });
+  $("dv-method").addEventListener("change", e => { app.pickMode.method = e.target.value; app.refreshDivide(); });
+  $("dv-ref").addEventListener("change", e => { app.pickMode.ref = e.target.value; app.refreshDivide(); });
+  $("dv-save").addEventListener("click", () => app.saveDivide());
+  $("dv-cancel").addEventListener("click", () => app.cancelDivide());
+  $("area-tol").addEventListener("change", e => { app.settings.areaTol = +e.target.value; app.saveSettings(); app._needsMap = true; app.render(); });
   // the whiteboard: ✎ opens and closes it; its bar picks the tool, the colour, a track's width and the sheet
   app.boardView = new BoardView(app);
   $("btn-board").addEventListener("click", () => app.pickMode?.kind === "board" ? app.leaveBoard() : app.enterBoard());

@@ -259,10 +259,10 @@ test("geometry helpers: length, area, formatting", async () => {
   assert.equal(polygonArea([[0, 0], [100, 0], [100, 50], [0, 50], [0, 0]]), 5000);
   assert.equal(polygonArea([[0, 0], [100, 0], [100, 50], [0, 50]]), 5000, "open ring counts the same");
   assert.equal(fmtLength(70), "70 m");
-  assert.equal(fmtArea(5000), "5 000 m²");
+  assert.equal(fmtArea(5000), "5 000 m²", "a space no line breaks at");
   assert.equal(fmtArea(3.75), "3.8 m²", "a bed to a tenth");
   assert.equal(fmtArea(100), "100 m²");
-  assert.equal(fmtArea(12026), "1.20 ha (12 026 m²)");
+  assert.equal(fmtArea(12026), "1.20 ha (12 026 m²)");
 });
 
 test("an area's icon point lands inside the area, even when the centroid does not", async () => {

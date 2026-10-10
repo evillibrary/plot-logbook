@@ -78,6 +78,20 @@
         </div>
         <div class="note" id="point-note"></div>
       </div>
+      <div class="draw-bar" id="divide-bar" hidden>
+        <div class="draw-info"><strong id="divide-title">Divide</strong></div>
+        <div class="row dv-row">
+          <select id="dv-parts" title="How many parts"></select>
+          <select id="dv-method" title="How to cut it"></select>
+          <select id="dv-ref" title="Which fence the cuts follow, or which point they fan from"></select>
+        </div>
+        <label class="check" id="dv-name-row"><input type="checkbox" id="dv-name"> <span id="dv-name-text"></span></label>
+        <div class="row">
+          <button class="btn primary" id="dv-save">Save as planned fences</button>
+          <button class="btn" id="dv-cancel">Cancel</button>
+        </div>
+        <div class="note" id="dv-note"></div>
+      </div>
       <div class="draw-bar board-bar" id="board-bar" hidden>
         <div class="bd-tools" id="bd-tools"></div>
         <div class="bd-colours" id="bd-colours"><select id="bd-track" title="How wide the track is on the ground" hidden></select></div>
@@ -127,6 +141,11 @@
       <details class="grp" id="grp-fencetypes" open>
         <summary>Line types</summary>
         <div id="fence-key"></div>
+      </details>
+      <details class="grp" id="grp-areas" open>
+        <summary>Areas</summary>
+        <div class="sub"><span class="note">Fence ends this close count as meeting</span> <select id="area-tol"><option value="0.5">0.5 m</option><option value="1">1 m</option><option value="2">2 m</option><option value="3">3 m</option></select></div>
+        <div class="sub note" id="area-note"></div>
       </details>
       <details class="grp" id="grp-board" open>
         <summary>Whiteboard</summary>

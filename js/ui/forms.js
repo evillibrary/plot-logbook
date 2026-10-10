@@ -2,7 +2,7 @@
 import { h, field, today, toast } from "./dom.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, FENCE_COLOURS, colourOf, typeCat } from "../categories.js";
-import { describeGeom } from "../geo.js";
+import { describeGeom, fmtArea } from "../geo.js";
 import { GATE_KIND } from "../gate.js";
 import { SPACINGS, POINT_NAMES, onGeom, rowSummary, rowNote } from "../points.js";
 
@@ -245,7 +245,7 @@ export function fenceTypeForm(app, t, { onDone } = {}) {
 // place as the fence is, planned if the fence is. opts.on (with opts.line, opts.fromB): a point
 // on a line, the same way, in the line's category to begin with.
 export function featureForm(app, geom, opts = {}) {
-  const gate = opts.gate ?? null, on = opts.on ?? null, parent = gate ? opts.fence : on ? opts.line : null;
+  const gate = opts.gate ?? null, on = opts.on ?? null, parent = gate ? opts.fence : on ? opts.line : null, area = opts.area ?? null;
   const kind = !geom ? "none" : geom.type === "Point" ? "point" : geom.type === "LineString" ? "line" : "area";
   const name = h("input", { placeholder: kind === "none" ? "e.g. Bella" : kind === "line" ? "e.g. North paddock fence" : kind === "area" ? "e.g. Top paddock" : "e.g. Lemon tree", required: true,
     value: gate ? app.freshName(`${opts.fence.name} gate`) : "", ...(on ? { list: "point-names", placeholder: "e.g. Inspection hatch" } : {}) });
@@ -272,13 +272,14 @@ export function featureForm(app, geom, opts = {}) {
       g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.ll ?? geom.xy.map(toLL) };
     }
     await app.recordAll([...typeRecords, { op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
-      ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}), ...(on ? { on } : {}), ...(ft ? { fencetype: ft } : {}) }]);
+      ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}), ...(on ? { on } : {}), ...(area ? { area } : {}), ...(ft ? { fencetype: ft } : {}) }]);
     toast(`${name.value.trim()} added`); app.done(form);
   } },
     opts.back && h("button.back", { type: "button", onclick: opts.back }, opts.backLabel ?? (gate ? "‹ Back to the gate" : on ? "‹ Back to the line" : "‹ Back to the shape")),
-    h("h2", gate ? "New gate" : on ? `New point on ${opts.line.name}` : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
+    h("h2", gate ? "New gate" : area ? "Name this area" : on ? `New point on ${opts.line.name}` : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
     gate ? h("p.note", `${GATE_KIND[gate.kind].name} · ${gate.width.toFixed(1)} m · ${gate.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.fence.name}${opts.viaGps ? " (placed by GPS)" : ""}`)
       : on ? h("p.note", `${on.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.line.name}${opts.viaGps ? " (placed by GPS)" : ""}`)
+      : area ? h("p.note", `${opts.areaM2 != null ? fmtArea(opts.areaM2) : describeGeom(geom)} inside ${opts.fences?.join(", ") ?? "its fences"}. It follows them: move a fence and the area changes with it.`)
       : geom && h("p.note", `${describeGeom(geom)}${how}${at ? ` · ${at}` : ""}`),
     field("Name", name), names, field("Category", type), typePick?.el, planned?.el, geom ? field("Position confidence", conf) : null, field("Description", desc),
     h("div.row", h("button.btn.primary", { type: "submit" }, "Add"), h("button.btn", { type: "button", onclick: () => app.done(form) }, "Cancel")));

@@ -61,10 +61,13 @@ export function buildMap(container, plot, tiling, opts = {}) {
 
   // A feature swallowed taps that were meant for the map, so nothing could be placed inside
   // an area — a cow in a paddock, a crop in a bed. During a pick the tap falls through.
-  function tapped(e, f, layer) {
+  // A tap on an area that is near a line or point is meant for that (a pipe through a paddock); a
+  // tap on the area's own icon (exact) is meant for the area.
+  function tapped(e, f, layer, { exact = false } = {}) {
     L.DomEvent.stop(e);
-    if (opts.picking?.()) opts.onPick?.(toXY(e.latlng));
-    else opts.onSelect?.(f, layer);
+    if (opts.picking?.()) return opts.onPick?.(toXY(e.latlng));
+    const near = !exact && f.geom?.type === "Polygon" ? opts.near?.(toXY(e.latlng)) : null;
+    opts.onSelect?.(near ?? f, layer);
   }
 
   // A planned feature (not built yet) is drawn dashed and faded, and carries the class the
@@ -118,12 +121,13 @@ export function buildMap(container, plot, tiling, opts = {}) {
       areaPins.push({ pin, cat: c, xy, planned: !!f.planned });
       label(pin, (f.type === "structures" ? f.name : `${f.name} · ${fmtArea(f.areaM2 ?? polygonArea(xy))}`) + tail, cls);
       pin.feature = f;
-      pin.on("click", e => tapped(e, f, layer));
+      pin.on("click", e => tapped(e, f, layer, { exact: true }));
       pin.addTo(group);
     }
     layer.feature = f;
     layer.on("click", e => tapped(e, f, layer));
     layer.addTo(group);
+    if (f.geom.type === "Polygon") layer.bringToBack();               // under the lines that cross it
     byId.set(f.id, layer);
     return layer;
   }

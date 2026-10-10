@@ -218,16 +218,23 @@ h1 { font-size: 20px; margin: 8px 0 12px; }
 #btn-board.on { background: var(--accent); color: #fff; border-color: var(--accent); }
 #map.boarding .leaflet-overlay-pane *, #map.boarding .leaflet-marker-pane *, #map.boarding .leaflet-tooltip-pane * { pointer-events: none !important; }
 #map.boarding { cursor: crosshair; }
-.board-bar { padding: 8px 10px; }
-.bd-tools { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 6px; }
-.bd-tools button { padding: 7px 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-size: 13px; }
+/* and the map keeps every touch: with its own dragging off (one finger draws), Leaflet's stylesheet
+   gives one-finger drags back to the browser to scroll with, and the browser cancels the stroke a
+   few pixels in (0.3.6: a finger drew only a ghost) */
+#map.boarding.leaflet-container { touch-action: none !important; }
+/* small, and packed to the left: the bar is for reaching, not reading, and the map is what matters */
+.board-bar { padding: 6px 8px; right: auto; max-width: calc(100% - 20px); width: 372px; }
+.bd-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.bd-tools button { padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; line-height: 1.3; }
 .bd-tools button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
-.bd-colours { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; flex-wrap: wrap; }
-.bd-colours button { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); padding: 0; }
+.bd-colours { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
+.bd-colours button { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); padding: 0; }
 .bd-colours button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink); }
-.bd-colours select { margin-left: auto; }
-.board-bar .row select { flex: 1; min-width: 0; padding: 8px 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-.board-bar .note { margin-top: 6px; min-height: 1.4em; }
+.bd-colours select { padding: 3px 4px; font-size: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+.board-bar .row { gap: 4px; flex-wrap: nowrap; }
+.board-bar .row .btn { padding: 4px 9px; font-size: 13px; border-radius: 8px; }
+.board-bar .row select { flex: 1; min-width: 0; padding: 4px 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.board-bar .note { margin-top: 4px; font-size: 12px; min-height: 1.3em; }
 .bd-text span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 700 15px/1.1 system-ui, sans-serif;
   text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff; }
 .bd-measure span { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font: 600 11px/1 system-ui, sans-serif; color: #1e1f1a;
@@ -239,3 +246,6 @@ h1 { font-size: 20px; margin: 8px 0 12px; }
 .dv-row select { flex: 1; min-width: 0; }
 #divide-bar .check { margin: 8px 0 6px; font-size: 14px; }
 .area-about .round { margin-bottom: 2px; line-height: 1.7; }
+/* the feature sheet dropped to its top bar (its grip), the map clear above it */
+.sheet.open.peek { transform: translateY(calc(100% - 84px)); overflow: hidden; }
+@media (min-width: 900px) { .sheet.open.peek { transform: none; overflow: auto; } }

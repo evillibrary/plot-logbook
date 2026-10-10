@@ -16,10 +16,10 @@ import { describeAt } from "./grid.js";
 import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength, interiorPoint } from "./geo.js";
 import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate, lengthOf } from "./gate.js";
 import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
-import { buildFaces, faceAt, divideStrips, divideFan, sideDir, corners } from "./areas.js";
+import { buildFaces, faceAt, divideStrips, divideFan, sideDir, corners, nearestOn } from "./areas.js";
 import { BoardView, TOOLS, BOARD_COLOURS, TRACK_WIDTHS, loadBoards, saveMine, emptyBoard, pushBoard, pullBoards, strokeMark, markGeom, newId, measure, measureText } from "./board.js";
 
-const VERSION = "0.3.6";
+const VERSION = "0.3.7";
 const $ = id => document.getElementById(id);
 const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
@@ -216,6 +216,7 @@ const app = {
     const live = { ...this.plot, features: [...this.state.features.values()].filter(f => !f.retired && !f.deleted && !f.hiddenWith && f.geom).map(show), fencetypes: this.state.fencetypes };
     this.mapApi = buildMap($("map"), live, tiling, {
       onSelect: f => { if (this.pickMode) return; this.openSheet(f); },
+      near: xy => this.featureNear(xy),
       picking: () => !!this.pickMode,
       onPick: xy => this.onMapClick(xy),
       onUserPan: () => this.onUserPan(),
@@ -232,6 +233,7 @@ const app = {
     if (this.gps.watch !== null) { this.mapApi.setFollowing(this.gps.follow); if (this.lastGps) this.mapApi.showMe(this.lastGps.xy, this.lastGps.acc); }
     this.refreshGridUi();
     this.boardView?.attach(this.mapApi);                             // the whiteboard rides on whichever map there is
+    this.reHighlight();                                              // and what was picked out stays picked out
   },
 
   // --- the planning grid: on/off, square size and snapping are this device's, kept in settings ---
@@ -386,21 +388,24 @@ const app = {
     if (name === "map") this.mapApi?.map.invalidateSize();
   },
   openSheet(f, { fromList = false } = {}) {
+    if (this.selected?.id !== f.id) $("feature-sheet").classList.remove("peek");
     this.clearArea();
     this.selected = f; this._formOpen = false; this._listShown = false; this._fromList = fromList;
+    this.highlightFeature(f);
     $("layers-sheet").classList.remove("open");
     $("feature-sheet").scrollTop = 0;
     renderFeature(this, f);
   },
   closeSheet() {
-    $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.remove("open"); this._formOpen = false; this._listShown = false;
+    $("feature-sheet").classList.remove("open", "peek"); $("layers-sheet").classList.remove("open"); this._formOpen = false; this._listShown = false;
     this.clearArea();
     // leaving a feature opened from the list another way: drop the history entry that back would have used
     if (this._fromList) { this._fromList = false; if (history.state?.pl === "list") history.back(); }
     if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
     this.applyUpdate();
   },
-  showForm(form) {
+  showForm(form, { keepPeek = false } = {}) {
+    if (!keepPeek) $("feature-sheet").classList.remove("peek");
     this._formOpen = true; this._listShown = false;
     clear($("feature-body")).append(form);
     $("layers-sheet").classList.remove("open");
@@ -783,12 +788,46 @@ const app = {
       return;
     }
     if (this.selArea?.key === face.key) return this.nameArea(face, this.selArea.at);
+    this._hiFeature = null;
     this.selArea = { ...face, at: xy };
     this.mapApi.highlight(face, fmtArea(face.area));
-    this.showForm(areaCard(this, face, xy));
+    this.showForm(areaCard(this, face, xy), { keepPeek: this._areaCard });       // still dropped, if it was
     this._areaCard = true;
   },
-  clearArea() { if (!this.selArea && !this._areaCard) return; this.selArea = null; this._areaCard = false; this.mapApi?.highlight(null); },
+  clearArea() { if (!this.selArea && !this._areaCard && !this._hiFeature) return; this.selArea = null; this._areaCard = false; this._hiFeature = null; this.mapApi?.highlight(null); },
+  // An area's sheet picks it out on the map as a fresh enclosure is picked out: a named area as its
+  // fences enclose it now, any other area as drawn.
+  highlightFeature(f) {
+    if (f?.geom?.type !== "Polygon" || f.deleted || f.retired) return;
+    const face = f.area ? this.areaFace(f) : null, xy = f.geom.xy;
+    const ring = face?.ring ?? (xy.length > 1 && xy[0][0] === xy.at(-1)[0] && xy[0][1] === xy.at(-1)[1] ? xy.slice(0, -1) : xy);
+    this._hiFeature = f.id;
+    this.mapApi?.highlight({ ring, holes: face?.holes ?? [] }, fmtArea(face?.area ?? polygonArea(ring)));
+  },
+  // after the map is rebuilt (a sync, a save), whatever was picked out is picked out again
+  reHighlight() {
+    if (this._hiFeature) { const f = this.state.features.get(this._hiFeature); if (f) { this._hiFeature = null; this.highlightFeature(f); } }
+    else if (this.selArea) this.mapApi?.highlight(this.selArea, fmtArea(this.selArea.area));
+  },
+  // The line or point a tap is meant for: the nearest within a finger's width, of those showing.
+  // It wins over an area the tap is also inside, or a water line running through a named paddock
+  // could never be tapped (0.3.6).
+  featureNear(xy, px = 16) {
+    if (!this.mapApi) return null;
+    const tol = px / this.mapApi.pxPerM(), planned = this.plannedShown();
+    let best = null;
+    for (const f of this.state.features.values()) {
+      if (f.retired || f.deleted || f.hiddenWith || !f.geom || f.geom.type === "Polygon" || (f.planned && !planned)) continue;
+      const layer = this.mapApi.byId.get(f.id);
+      if (!layer?._map) continue;                                      // switched off in Layers
+      const pts = f.geom.type === "Point" ? [f.geom.xy] : f.geom.xy;
+      let d = Infinity;
+      if (f.geom.type === "LineString") for (let k = 1; k < pts.length; k++) d = Math.min(d, nearestOn(xy, pts[k - 1], pts[k]).d);
+      else for (const q of pts) d = Math.min(d, Math.hypot(q[0] - xy[0], q[1] - xy[1]));
+      if (d <= tol && (!best || d < best.d)) best = { f, d };
+    }
+    return best?.f ?? null;
+  },
   // the open end nearest a tap, in words: "Back fence stops 1.4 m short of Side fence"
   nearestGap(xy, gaps) {
     const g = gaps.filter(g => Number.isFinite(g.d) && g.d <= 10).sort((a, b) => Math.hypot(a.p[0] - xy[0], a.p[1] - xy[1]) - Math.hypot(b.p[0] - xy[0], b.p[1] - xy[1]))[0];
@@ -1006,6 +1045,9 @@ const app = {
     if (!this.pickMode) {
       // with an enclosure's card up, taps go on choosing (a second on the same one names it);
       // with anything else open, a tap on the map closes it, as it always has
+      // a line or point near the tap is what it means, before the ground round it
+      const near = this.featureNear(xy);
+      if (near) return this.openSheet(near);
       if (this._areaCard) return this.tapArea(xy);
       if ($("feature-sheet").classList.contains("open") || $("layers-sheet").classList.contains("open")) { this.closeSheet(); return; }
       return this.tapArea(xy);
@@ -1052,7 +1094,7 @@ async function boot() {
   // tabs, sheets, buttons
   for (const b of document.querySelectorAll("nav.tabs button")) b.addEventListener("click", () => app.showTab(b.dataset.tab));
   for (const b of document.querySelectorAll("[data-close]")) b.addEventListener("click", () => app.closeSheet());
-  for (const el of document.querySelectorAll(".sheet")) dragSheet(el, () => app.closeSheet());
+  for (const el of document.querySelectorAll(".sheet")) dragSheet(el, () => app.closeSheet(), { peek: el.id === "feature-sheet" });
   $("btn-layers").addEventListener("click", () => { $("feature-sheet").classList.remove("open"); $("layers-sheet").classList.toggle("open"); });
   $("btn-locate").addEventListener("click", () => app.plot && app.locate());
   // fingers on the map, for holding the map still under them while it follows you

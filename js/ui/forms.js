@@ -271,9 +271,12 @@ export function featureForm(app, geom, opts = {}) {
       const toLL = xy => app.unproject(xy).map(v => +v.toFixed(7));
       g = geom.type === "Point" ? { type: "Point", xy: geom.xy, ll: toLL(geom.xy) } : { type: geom.type, xy: geom.xy, ll: geom.ll ?? geom.xy.map(toLL) };
     }
-    await app.recordAll([...typeRecords, { op: "feature.add", feature: `f_${crypto.randomUUID().slice(0, 8)}`, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
+    const fid = `f_${crypto.randomUUID().slice(0, 8)}`;
+    await app.recordAll([...typeRecords, { op: "feature.add", feature: fid, name: name.value.trim(), type: type.value, confidence: geom ? conf.value : null, source: !geom ? "app" : fromGps ? "phone-gps" : "app-map", description: desc.value.trim(), geom: g,
       ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}), ...(on ? { on } : {}), ...(area ? { area } : {}), ...(ft ? { fencetype: ft } : {}) }]);
-    toast(`${name.value.trim()} added`); app.done(form);
+    toast(`${name.value.trim()} added`);
+    // a newly named area stays picked out, its own sheet now
+    if (area && app.state.features.get(fid)) { app._formOpen = false; app.openSheet(app.state.features.get(fid)); } else app.done(form);
   } },
     opts.back && h("button.back", { type: "button", onclick: opts.back }, opts.backLabel ?? (gate ? "‹ Back to the gate" : on ? "‹ Back to the line" : "‹ Back to the shape")),
     h("h2", gate ? "New gate" : area ? "Name this area" : on ? `New point on ${opts.line.name}` : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),

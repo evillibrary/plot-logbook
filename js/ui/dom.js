@@ -43,28 +43,34 @@ export function toast(msg, ms = 2500) {
 // The grip on a bottom sheet is a real handle: drag it down to dismiss, or just tap it.
 // It looked like one long before it was one, and people kept pulling on it and giving up.
 // Hidden by CSS in the desktop side-panel layout, where pulling down means nothing.
-export function dragSheet(el, onClose) {
+// With { peek: true } (the feature sheet) it does not close but drops down to its top bar, so
+// the map can be seen with whatever is picked out still picked out: a tap on the grip, or a pull
+// up, brings it back; pulled down again from there, it closes. The × closes it either way.
+export const PEEK = 84;                                   // px of a dropped sheet left showing
+export function dragSheet(el, onClose, { peek = false } = {}) {
   const grip = el.querySelector(".grip");
   if (!grip) return;
-  let id = null, startY = 0, dy = 0, t0 = 0;
+  let id = null, startY = 0, dy = 0, t0 = 0, was = false;
   const release = () => { el.classList.remove("dragging"); el.style.transform = ""; };
   grip.addEventListener("pointerdown", e => {
     if (id !== null) return;
-    id = e.pointerId; startY = e.clientY; dy = 0; t0 = e.timeStamp;
+    id = e.pointerId; startY = e.clientY; dy = 0; t0 = e.timeStamp; was = el.classList.contains("peek");
     grip.setPointerCapture(id);
     el.classList.add("dragging");
   });
   grip.addEventListener("pointermove", e => {
     if (e.pointerId !== id) return;
-    dy = Math.max(0, e.clientY - startY);                 // down only; up would tear it off the bottom
-    el.style.transform = `translateY(${dy}px)`;
+    dy = was ? e.clientY - startY : Math.max(0, e.clientY - startY);     // down only, unless dropped; up would tear it off the bottom
+    el.style.transform = was ? `translateY(calc(100% - ${PEEK}px + ${dy}px))` : `translateY(${dy}px)`;
   });
   grip.addEventListener("pointerup", e => {
     if (e.pointerId !== id) return;
     id = null;
-    const flicked = dy > 12 && e.timeStamp - t0 < 300, tapped = dy < 4;
+    const flicked = dy > 12 && e.timeStamp - t0 < 300, tapped = Math.abs(dy) < 4;
     release();                                            // same task as the close, so it animates on from here
-    if (dy > 70 || flicked || tapped) onClose();
+    if (!peek) { if (dy > 70 || flicked || tapped) onClose(); return; }
+    if (was) { if (dy > 40) onClose(); else if (tapped || dy < -30) el.classList.remove("peek"); return; }
+    if (dy > 70 || flicked || tapped) { el.classList.add("peek"); el.scrollTop = 0; }
   });
   grip.addEventListener("pointercancel", e => { if (e.pointerId === id) { id = null; release(); } });
 }

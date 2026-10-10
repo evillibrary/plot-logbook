@@ -21,6 +21,7 @@
         <span class="spacer"></span>
         <button class="pill icon" id="btn-list" title="Find a feature" aria-label="Find a feature"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/></svg></button>
         <button class="pill icon" id="btn-locate" title="Where am I">◎</button>
+        <button class="pill icon" id="btn-board" title="Whiteboard: sketch over the map" aria-label="Whiteboard" aria-pressed="false"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"><path d="M4 20l1.2-4.6L15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14 6.6l3.4 3.4"/><path d="M13 21h7"/></svg></button>
         <button class="pill icon" id="btn-layers" title="Layers">≡</button>
       </div>
       <div class="draw-bar" id="pick-bar" hidden>
@@ -77,6 +78,18 @@
         </div>
         <div class="note" id="point-note"></div>
       </div>
+      <div class="draw-bar board-bar" id="board-bar" hidden>
+        <div class="bd-tools" id="bd-tools"></div>
+        <div class="bd-colours" id="bd-colours"><select id="bd-track" title="How wide the track is on the ground" hidden></select></div>
+        <div class="row">
+          <select id="bd-sheet" title="Which sketch you are drawing on"></select>
+          <button class="btn" id="bd-undo" title="Undo">↶</button>
+          <button class="btn" id="bd-redo" title="Redo">↷</button>
+          <button class="btn" id="bd-clear" title="Clear this sheet">Clear</button>
+          <button class="btn primary" id="bd-done">Done</button>
+        </div>
+        <div class="note" id="bd-note"></div>
+      </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
         <button class="fab" id="btn-add" title="Log something here">+</button>
@@ -114,6 +127,11 @@
       <details class="grp" id="grp-fencetypes" open>
         <summary>Line types</summary>
         <div id="fence-key"></div>
+      </details>
+      <details class="grp" id="grp-board" open>
+        <summary>Whiteboard</summary>
+        <label><input type="checkbox" id="board-show"> Show sketches outside the whiteboard</label>
+        <div id="board-sheets"></div>
       </details>
     </div>
     <div class="sheet" id="feature-sheet">

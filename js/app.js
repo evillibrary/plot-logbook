@@ -16,8 +16,9 @@ import { describeAt } from "./grid.js";
 import { describeGeom, lineLength, polygonArea, fmtArea, fmtLength } from "./geo.js";
 import { GateEdit, GATE_KINDS, GATE_KIND, gateGeom, refit, project, along, sideOf, normGate, lengthOf } from "./gate.js";
 import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
+import { BoardView, TOOLS, BOARD_COLOURS, TRACK_WIDTHS, loadBoards, saveMine, emptyBoard, pushBoard, pullBoards, strokeMark, markGeom, newId, measure, measureText } from "./board.js";
 
-const VERSION = "0.3.4";
+const VERSION = "0.3.5";
 const $ = id => document.getElementById(id);
 const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
@@ -26,6 +27,8 @@ const app = {
   tab: "map", selected: null, pickMode: null, lastGps: null, syncing: false,
   gps: { watch: null, follow: false, first: false, far: false, toldFree: false, wake: null }, _down: new Set(),
   hiddenTypes: new Set(), lastFenceType: null,          // line types switched off in Layers; the type the last fence was given
+  // the whiteboard: this phone's marks and the other phones', what it draws with, and undo
+  board: { mine: null, others: {} }, boardView: null, boardTool: "pen", boardColour: "red", boardTrack: 3, boardSheet: "s_sketch", boardUndo: [], boardRedo: [],
 
   get ctx() { return { author: this.settings.author || "unknown", device: this.settings.device || "unknown" }; },
   gpsNow() { return this.lastGps; },
@@ -224,6 +227,7 @@ const app = {
     // the new map carries on where the old one left off: the dot, and following you
     if (this.gps.watch !== null) { this.mapApi.setFollowing(this.gps.follow); if (this.lastGps) this.mapApi.showMe(this.lastGps.xy, this.lastGps.acc); }
     this.refreshGridUi();
+    this.boardView?.attach(this.mapApi);                             // the whiteboard rides on whichever map there is
   },
 
   // --- the planning grid: on/off, square size and snapping are this device's, kept in settings ---
@@ -270,6 +274,12 @@ const app = {
       let sent = 0, up = 0;
       try { sent = await events.push(this.source, this.ctx, status); up = await photos.uploadPending(this.source, status); }
       catch (e) { if (!/read-only/.test(e.message)) throw e; }
+      // the whiteboards: never what makes a sync fail
+      try {
+        status("whiteboard");
+        await pushBoard(this.source, this.ctx, this.board.mine);
+        if (await pullBoards(this.source, this.ctx, this.board)) { this.boardView?.draw(); this.renderBoardKey(); }
+      } catch (e) { console.warn("whiteboard sync", e); }
       // a feature someone else added or moved has to reach the map now, not on the next open
       if (got.n) { await this.refold(); if (got.features) this._needsMap = true; this.render(); }
       await this.checkPlot();
@@ -351,6 +361,7 @@ const app = {
   // --- UI ---
   render() {
     this.renderFenceKey();                                            // before any rebuild, which reads its switches
+    this.renderBoardKey();
     ({ jobs: renderJobs, water: renderWater, photos: renderPhotos, more: renderMore })[this.tab]?.(this);
     if (this.tab === "map" && this.selected && $("feature-sheet").classList.contains("open") && !this._formOpen) {
       const f = this.state.features.get(this.selected.id); if (f) renderFeature(this, f);
@@ -708,9 +719,126 @@ const app = {
     let n = 2; while (taken.has(`${base} ${n}`.toLowerCase())) n++;
     return `${base} ${n}`;
   },
+  // --- the whiteboard (board.js): sketch over the map without recording anything. Inside it the
+  // features take no taps; Layers still shows and hides them. Marks are this phone's, kept and
+  // synced on their own; an erased mark is gone. ---
+  enterBoard() {
+    if (!this.plot || !this.mapApi) return;
+    if (this.pickMode) return toast("Finish what you're doing first");
+    this.closeSheet();
+    this.pickMode = { kind: "board" };
+    this.board.mine ??= emptyBoard();
+    if (!this.board.mine.sheets.some(s => s.id === this.boardSheet)) this.boardSheet = this.board.mine.sheets[0].id;
+    $("board-bar").hidden = false; $("btn-add").hidden = true; $("btn-list").hidden = true; $("jobs-strip").hidden = true;
+    $("btn-board").classList.add("on"); $("btn-board").setAttribute("aria-pressed", "true");
+    this.boardView.setActive(true); this.boardView.draw();
+    this.refreshBoardBar();
+  },
+  leaveBoard() {
+    if (this.pickMode?.kind !== "board") return;
+    this.pickMode = null;
+    $("board-bar").hidden = true; $("btn-add").hidden = false; $("btn-list").hidden = false;
+    $("btn-board").classList.remove("on"); $("btn-board").setAttribute("aria-pressed", "false");
+    this.boardView.setActive(false); this.boardView.draw();
+    this.render();
+    if (this._plotStale) setTimeout(() => this.checkPlot(), 300);
+    this.applyUpdate();
+  },
+  setBoardTool(t) { this.boardTool = t; this.boardView.panning(t === "pan"); this.refreshBoardBar(); },
+  refreshBoardBar(readout = null) {
+    for (const el of document.querySelectorAll("#bd-tools button")) el.setAttribute("aria-pressed", String(el.dataset.tool === this.boardTool));
+    for (const el of document.querySelectorAll("#bd-colours button")) el.setAttribute("aria-pressed", String(el.dataset.colour === this.boardColour));
+    $("bd-track").hidden = this.boardTool !== "track"; $("bd-track").value = String(this.boardTrack);
+    const mine = this.board.mine ?? emptyBoard();
+    $("bd-sheet").replaceChildren(...mine.sheets.map(s => h("option", { value: s.id, selected: s.id === this.boardSheet }, `${s.name} (${mine.marks.filter(m => m.sheet === s.id).length})`)),
+      h("option", { value: "new" }, "＋ New sheet…"), h("option", { value: "rename" }, "Rename this sheet…"), mine.sheets.length > 1 && h("option", { value: "delete" }, "Delete this sheet…"));
+    $("bd-undo").disabled = !this.boardUndo.length; $("bd-redo").disabled = !this.boardRedo.length;
+    $("bd-clear").disabled = !mine.marks.some(m => m.sheet === this.boardSheet);
+    $("bd-note").textContent = readout ?? TOOLS.find(t => t.id === this.boardTool)?.hint ?? "";
+  },
+  boardReadout(text) { $("bd-note").textContent = text; },
+  // a stroke finished: a mark added, marks rubbed out, words placed, or a mark taken to plan
+  async boardStrokeDone(s, pxPerM) {
+    if (s.tool === "erase") { if (s.erased.length) this.boardDo({ type: "erase", marks: s.erased }); return; }
+    if (s.cancelled) return;
+    if (s.tool === "plan") { if (s.moved < 12) { const m = this.boardView.markAt(s.pts[0]); m ? this.boardToPlan(m) : toast("Tap on a mark to plan it"); } return; }
+    if (s.tool === "text") {
+      if (s.moved >= 12) return;
+      const text = prompt("Words on the board"); if (!text?.trim()) return;
+      return this.boardDo({ type: "add", marks: [{ id: newId("m"), sheet: this.boardSheet, tool: "text", colour: this.boardColour, w: 0, xy: [s.pts[0].map(v => Math.round(v * 100) / 100)], text: text.trim(), at: events.isoNow() }] });
+    }
+    const m = strokeMark(s, { sheet: this.boardSheet, colour: this.boardColour, track: this.boardTrack, pxPerM });
+    if (!m) return this.refreshBoardBar();
+    this.boardDo({ type: "add", marks: [m] });
+    this.refreshBoardBar(measureText(measure(m)));
+  },
+  // every change to the board is one of these, so it can be undone and done again
+  boardDo(op, { undoing = false, redoing = false } = {}) {
+    const mine = this.board.mine;
+    const ids = new Set(op.marks.map(m => m.id));
+    if (op.type === "add") mine.marks.push(...op.marks);
+    else mine.marks = mine.marks.filter(m => !ids.has(m.id));
+    if (!undoing) { this.boardUndo.push(op); if (!redoing) this.boardRedo = []; }
+    this.boardSaved();
+  },
+  boardUndoLast() { const op = this.boardUndo.pop(); if (!op) return; this.boardDo({ ...op, type: op.type === "add" ? "erase" : "add" }, { undoing: true }); this.boardRedo.push(op); this.refreshBoardBar(); },
+  boardRedoLast() { const op = this.boardRedo.pop(); if (!op) return; this.boardDo(op, { redoing: true }); this.refreshBoardBar(); },
+  async boardSaved() {
+    const mine = this.board.mine;
+    mine.dirty = true; mine.rev = (mine.rev ?? 0) + 1;
+    this.boardView.draw(); this.refreshBoardBar(); this.renderBoardKey();
+    await saveMine(mine);
+    clearTimeout(this._boardT); this._boardT = setTimeout(() => this.sync(), 4000);
+  },
+  boardClear() {
+    const sheet = this.board.mine.sheets.find(s => s.id === this.boardSheet), marks = this.board.mine.marks.filter(m => m.sheet === this.boardSheet);
+    if (!marks.length || !confirm(`Clear everything you have drawn on "${sheet?.name}"?\n\nIt is gone for good once you leave the whiteboard (↶ brings it back until then).`)) return;
+    this.boardDo({ type: "erase", marks });
+  },
+  async boardSheetChosen(v) {
+    const mine = this.board.mine;
+    const sheet = mine.sheets.find(s => s.id === this.boardSheet);
+    if (v === "new") {
+      const name = prompt("Name of the new sheet", `Sketch ${mine.sheets.length + 1}`)?.trim();
+      if (name) { const s = { id: newId("s"), name }; mine.sheets.push(s); this.boardSheet = s.id; await this.boardSaved(); }
+    } else if (v === "rename") {
+      const name = prompt("New name for this sheet", sheet?.name ?? "")?.trim();
+      if (name && sheet) { sheet.name = name; await this.boardSaved(); }
+    } else if (v === "delete") {
+      const n = mine.marks.filter(m => m.sheet === this.boardSheet).length;
+      if (sheet && confirm(`Delete the sheet "${sheet.name}"${n ? ` and its ${n} mark${n === 1 ? "" : "s"}` : ""}? This can't be undone.`)) {
+        mine.marks = mine.marks.filter(m => m.sheet !== sheet.id); mine.sheets = mine.sheets.filter(s => s !== sheet);
+        this.boardUndo = this.boardUndo.filter(op => !op.marks.some(m => m.sheet === sheet.id)); this.boardRedo = [];
+        this.boardSheet = mine.sheets[0].id; await this.boardSaved();
+      }
+    } else this.boardSheet = v;
+    this.boardView.draw(); this.refreshBoardBar();
+  },
+  // a mark made real: a planned line, or a planned area if it is a loop, named in the usual form
+  boardToPlan(m) {
+    const geom = markGeom(m);
+    if (!geom) return toast("That mark has no line to plan");
+    this.leaveBoard();
+    this.showForm(featureForm(this, geom, { type: geom.type === "Polygon" ? "paddocks" : "fences", planned: true, back: () => this.enterBoard(), backLabel: "‹ Back to the whiteboard" }));
+  },
+  // Layers → Whiteboard: show the sketches outside the whiteboard or not, and each sheet on its own
+  renderBoardKey() {
+    const box = $("board-sheets"); if (!box) return;
+    const hidden = new Set(this.settings.boardHidden ?? []);
+    const rows = [];
+    const mine = this.board.mine;
+    for (const s of mine?.sheets ?? []) rows.push({ key: `me:${s.id}`, name: s.name, by: "You", n: mine.marks.filter(m => m.sheet === s.id).length });
+    for (const [dev, o] of Object.entries(this.board.others)) for (const s of o.sheets) rows.push({ key: `${dev}:${s.id}`, name: s.name, by: o.by, n: o.marks.filter(m => m.sheet === s.id).length });
+    $("board-show").checked = !!this.settings.boardShow;
+    box.replaceChildren(...rows.filter(r => r.n || r.by === "You").map(r => h("label", h("input", { type: "checkbox", checked: !hidden.has(r.key),
+      onchange: e => { const hs = new Set(this.settings.boardHidden ?? []); e.target.checked ? hs.delete(r.key) : hs.add(r.key); this.settings.boardHidden = [...hs]; this.saveSettings(); this.boardView.draw(); } }),
+      h("span.ft-name", r.name, h("span.meta", `${r.by} · ${r.n} mark${r.n === 1 ? "" : "s"}`)))),
+      ...(rows.length ? [] : [h("div.sub.note", "Nothing sketched yet. ✎ on the map opens the whiteboard.")]));
+  },
   async onMapClick(xy) {
     if (!this.pickMode) { this.closeSheet(); return; }
     const mode = this.pickMode;
+    if (mode.kind === "board") return;
     if (mode.kind === "gate") { this.mapApi.gate.place(xy); return; }
     if (mode.kind === "point") { this.mapApi.point.place(xy); return; }
     // drawing and reshaping snap for themselves: onto another fence first, then the grid
@@ -765,7 +893,7 @@ async function boot() {
   $("btn-add").addEventListener("click", () => app.addMenu());
   $("btn-list").addEventListener("click", () => app.plot && app.showList());
   $("pick-cancel").addEventListener("click", () => app.cancelPick());
-  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate(), point: () => app.cancelPoint() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
+  document.addEventListener("keydown", e => { if (e.key !== "Escape" || !app.pickMode) return; ({ shape: () => app.cancelShape(), gate: () => app.cancelGate(), point: () => app.cancelPoint(), board: () => app.leaveBoard() })[app.pickMode.kind]?.() ?? app.cancelPick(); });
   // the shape bar: each button changes the working copy, which is only recorded on Save
   const shapeDo = fn => () => { const e = app.mapApi?.shape.edit(); if (!e) return; if (fn(e) !== false) { app.mapApi.shape.redraw(); app.refreshShapeBar(); } };
   // a GPS fix is a measurement: never snapped or joined, and the point says it came by GPS
@@ -804,6 +932,21 @@ async function boot() {
   $("point-undo").addEventListener("click", pointDo(e => e.undo()));
   $("point-save").addEventListener("click", () => app.savePoint());
   $("point-cancel").addEventListener("click", () => app.cancelPoint());
+  // the whiteboard: ✎ opens and closes it; its bar picks the tool, the colour, a track's width and the sheet
+  app.boardView = new BoardView(app);
+  $("btn-board").addEventListener("click", () => app.pickMode?.kind === "board" ? app.leaveBoard() : app.enterBoard());
+  $("bd-tools").append(...TOOLS.map(t => h("button.bd-tool", { type: "button", title: t.hint, dataset: { tool: t.id }, onclick: () => app.setBoardTool(t.id) }, t.name)));
+  $("bd-colours").prepend(...BOARD_COLOURS.map(c => h("button", { type: "button", title: colourOf(c).name, "aria-label": colourOf(c).name, dataset: { colour: c }, style: { background: colourOf(c).color },
+    onclick: () => { app.boardColour = c; app.refreshBoardBar(); } })));
+  $("bd-track").append(...TRACK_WIDTHS.map(w => h("option", { value: String(w) }, `${w} m wide`)));
+  $("bd-track").addEventListener("change", e => { app.boardTrack = +e.target.value; app.refreshBoardBar(); });
+  $("bd-sheet").addEventListener("change", e => app.boardSheetChosen(e.target.value));
+  $("bd-undo").addEventListener("click", () => app.boardUndoLast());
+  $("bd-redo").addEventListener("click", () => app.boardRedoLast());
+  $("bd-clear").addEventListener("click", () => app.boardClear());
+  $("bd-done").addEventListener("click", () => app.leaveBoard());
+  $("board-show").addEventListener("change", e => { app.settings.boardShow = e.target.checked; app.saveSettings(); app.boardView.showGroup(); });
+  Object.assign(app.board, await loadBoards());
   // one toggle per category under "Features"
   const catBox = $("layer-categories");
   for (const c of CATEGORIES) {

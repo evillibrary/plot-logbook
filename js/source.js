@@ -111,10 +111,10 @@ export class HttpSource {
   async getText(path) { const r = await this.fetch(path); return r && r.text(); }
   async getJson(path) { const r = await this.fetch(path); return r && r.json(); }
   async list(dir) {                          // python http.server gives an HTML index; scrape the hrefs
-    const t = await this.getText(dir + "/");
+    const t = await this.getText(dir ? dir + "/" : "");
     if (!t) return [];
     return [...t.matchAll(/href="([^"?/][^"]*?)(\/?)"/g)]
-      .map(m => ({ name: decodeURIComponent(m[1]), path: `${dir}/${decodeURIComponent(m[1])}`, type: m[2] ? "dir" : "file", sha: null }));
+      .map(m => ({ name: decodeURIComponent(m[1]), path: dir ? `${dir}/${decodeURIComponent(m[1])}` : decodeURIComponent(m[1]), type: m[2] ? "dir" : "file", sha: null }));
   }
   // GitHub answers with a content hash; a plain server may not. python http.server sends
   // neither an ETag nor better than whole-second timestamps, so fall back to hashing the

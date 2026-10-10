@@ -256,7 +256,7 @@ export function featureForm(app, geom, opts = {}) {
   const conf = select(CONFIDENCE, fromGps || parent?.confidence === "low" ? "low" : "medium");
   const how = opts.viaGps ? " (from GPS)" : opts.gpsPoints ? ` (${opts.gpsPoints === opts.points ? "every point" : `${opts.gpsPoints} of ${opts.points} points`} by GPS)` : "";
   const desc = h("textarea", { rows: 2, placeholder: gate ? "Latch, chain and lock, which way it swings, anything useful" : kind === "none" ? "Breed, born, anything useful" : "Planted when, variety, anything useful" });
-  const planned = geom ? plannedBox(!!parent?.planned) : null;
+  const planned = geom ? plannedBox(!!(parent?.planned || opts.planned)) : null;
   // a new fence starts as the last one drawn was, since fences are often put up a kind at a time
   const typePick = kind === "line" && !gate ? typePicker(app, type, app.lastFenceType) : null;
   const at = geom?.type === "Point" ? app.gridAt(geom.xy) : null;
@@ -275,7 +275,7 @@ export function featureForm(app, geom, opts = {}) {
       ...(planned?.input.checked ? { planned: true } : {}), ...(gate ? { gate } : {}), ...(on ? { on } : {}), ...(ft ? { fencetype: ft } : {}) }]);
     toast(`${name.value.trim()} added`); app.done(form);
   } },
-    opts.back && h("button.back", { type: "button", onclick: opts.back }, gate ? "‹ Back to the gate" : on ? "‹ Back to the line" : "‹ Back to the shape"),
+    opts.back && h("button.back", { type: "button", onclick: opts.back }, opts.backLabel ?? (gate ? "‹ Back to the gate" : on ? "‹ Back to the line" : "‹ Back to the shape")),
     h("h2", gate ? "New gate" : on ? `New point on ${opts.line.name}` : kind === "none" ? "New pet or animal" : kind === "line" ? "New line" : kind === "area" ? "New area" : "New point"),
     gate ? h("p.note", `${GATE_KIND[gate.kind].name} · ${gate.width.toFixed(1)} m · ${gate.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.fence.name}${opts.viaGps ? " (placed by GPS)" : ""}`)
       : on ? h("p.note", `${on.at.toFixed(1)} m from A and ${opts.fromB.toFixed(1)} m from B on ${opts.line.name}${opts.viaGps ? " (placed by GPS)" : ""}`)

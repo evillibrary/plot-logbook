@@ -516,7 +516,7 @@ export function buildMap(container, plot, tiling, opts = {}) {
   const home = () => map.fitBounds([ll(plot.home.bounds[0]), ll(plot.home.bounds[1])], { padding: [10, 10] });
   home(); onZoom();
 
-  return { map, groups, byId, overlays, setImagery, showMe, follow: followMe, setFollowing, home, ll, center,
+  return { map, groups, byId, overlays, setImagery, showMe, follow: followMe, setFollowing, home, ll, center, pxPerM,
     grid: { on: () => gridOn, size: () => gridSize, setSize: n => { gridSize = n; drawGrid(); }, frame: () => frame, extent: () => ext, levels: () => levels,
       snap: xy => snapToGrid(frame, xy, gridSize) },
     // a tap on the map while shaping: the point in hand goes there, or with none in hand the next point is added

@@ -6,7 +6,7 @@ import { buildMap, toXY } from "./map.js";
 import { installTileLayer, tileManifest } from "./tiles.js";
 import * as events from "./events.js";
 import * as photos from "./photos.js";
-import { h, clear, toast, today, dragSheet } from "./ui/dom.js";
+import { h, clear, toast, today, dragSheet, icon } from "./ui/dom.js";
 import { renderFeature, renderList, areaCard } from "./ui/sheet.js";
 import { CATEGORIES, CAT, iconSvg, isLine, lineTypeOf, colourOf, typeCat, typeNoun } from "./categories.js";
 import { renderJobs, renderWater, renderPhotos, photoViewer } from "./ui/views.js";
@@ -19,8 +19,11 @@ import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
 import { buildFaces, faceAt, divideStrips, divideFan, sideDir, corners, nearestOn } from "./areas.js";
 import { BoardView, TOOLS, BOARD_COLOURS, TRACK_WIDTHS, loadBoards, saveMine, emptyBoard, pushBoard, pullBoards, strokeMark, markGeom, newId, measure, measureText } from "./board.js";
 
-const VERSION = "0.3.7";
+const VERSION = "0.3.8";
 const $ = id => document.getElementById(id);
+// a readout written as separate pieces ("200.0 m", "4 points"); css/design.css puts the dots between
+// them, so a wrapped line never starts with one
+const inParts = (el, parts) => el.replaceChildren(...parts.map(p => h("span", p)));
 const FAR = 2000;                        // metres from the plot beyond which a fix does not move the map
 
 const app = {
@@ -250,7 +253,7 @@ const app = {
     const thin = on && levels?.thinned ? ` Showing every ${levels.step} m at this zoom; zoom in for ${gs.size} m squares.` : "";
     $("grid-note").textContent = how + thin;
     for (const b of document.querySelectorAll(".draw-bar .snap")) {
-      b.hidden = !on; b.setAttribute("aria-pressed", String(gs.snap)); b.textContent = `⊞ Snap to ${gs.size} m`;
+      b.hidden = !on; b.setAttribute("aria-pressed", String(gs.snap)); b.replaceChildren(icon("grid"), `Snap to ${gs.size} m`);
     }
   },
   snapping() { return !!this.mapApi?.grid.on() && this.gridSettings().snap; },
@@ -348,9 +351,9 @@ const app = {
       h("label", h("input", { type: "checkbox", checked: !this.hiddenTypes.has(r.id), dataset: { layer: `ft:${r.id}` },
         onchange: e => { e.target.checked ? this.hiddenTypes.delete(r.id) : this.hiddenTypes.add(r.id); this.mapApi?.overlays[`ft:${r.id}`]?.on(e.target.checked); } }),
         h("i.ft-line", { style: { background: r.colour.color } }), h("span.ft-name", r.name, h("span.meta", this.typeNote(r.id)))),
-      r.t && h("button.ft-edit", { title: `Rename, recolour or remove ${r.name}`, "aria-label": `Edit ${r.name}`, onclick: () => this.editFenceType(r.t) }, "✎"))),
-      h("div.sub.note", rows.length ? "A line takes its type's colour. Give a line its type in ✎ Edit." : "Name the kinds of fence (or pipe, or cable) here, or in a line's ✎ Edit, and each is drawn in a colour of its own."),
-      h("button.btn.ft-add", { onclick: () => this.editFenceType(null) }, "＋ New type"));
+      r.t && h("button.ft-edit", { title: `Rename, recolour or remove ${r.name}`, "aria-label": `Edit ${r.name}`, onclick: () => this.editFenceType(r.t) }, icon("edit")))),
+      h("div.sub.note", h("span", ...(rows.length ? ["A line takes its type's colour. Give a line its type in ", icon("edit"), " Edit."] : ["Name the kinds of fence (or pipe, or cable) here, or in a line's ", icon("edit"), " Edit, and each is drawn in a colour of its own."]))),
+      h("button.btn.ft-add", { onclick: () => this.editFenceType(null) }, icon("plus"), "New type"));
   },
   // the type's own form over the layers panel, and back to the panel after
   editFenceType(t) {
@@ -498,8 +501,9 @@ const app = {
     const e = this.mapApi?.shape.edit(); if (!e) return;
     const isNew = !this.pickMode?.feature, sel = e.sel, gps = this.lastGps;
     // to the decimetre while fiddling: "24 m" hides the half metre an end was just moved
-    const size = e.n < e.min ? `${e.n} of ${e.min} points` : `${e.closed ? fmtArea(polygonArea(e.pts)) : `${lineLength(e.pts).toFixed(1)} m`} · ${e.n} points`;
-    $("shape-summary").textContent = `· ${size}${e.gpsCount() ? ` (${e.gpsCount()} by GPS)` : ""}`;
+    const size = e.n < e.min ? [`${e.n} of ${e.min} points`] : [e.closed ? fmtArea(polygonArea(e.pts)) : `${lineLength(e.pts).toFixed(1)} m`, `${e.n} points`];
+    if (e.gpsCount()) size[size.length - 1] += ` (${e.gpsCount()} by GPS)`;
+    inParts($("shape-summary"), size);
     $("shape-gps").disabled = !gps;
     $("shape-gps").title = gps ? `${sel == null ? "Add a point" : `Put ${e.label(sel)}`} at my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
     $("shape-length").disabled = sel == null || e.n < 2;
@@ -614,14 +618,14 @@ const app = {
   refreshGateBar() {
     const e = this.mapApi?.gate.edit(); if (!e) return;
     const g = e.g, k = GATE_KIND[g.kind], gps = this.lastGps, $w = $("gate-width");
-    $("gate-summary").textContent = `· ${g.width.toFixed(1)} m wide · ${g.at.toFixed(1)} m from A · ${e.fromB.toFixed(1)} m from B`;
+    inParts($("gate-summary"), [`${g.width.toFixed(1)} m wide`, `${g.at.toFixed(1)} m from A`, `${e.fromB.toFixed(1)} m from B`]);
     $("gate-kind").value = g.kind;
     $w.replaceChildren(...[...new Set([...k.widths, g.width])].sort((a, b) => a - b).map(w => h("option", { value: String(w), selected: w === g.width }, `${w.toFixed(1)} m`)),
       h("option", { value: "other" }, "Other…"));
     $("gate-hinge").hidden = !["single", "walk", "sliding"].includes(g.kind);
-    $("gate-hinge").textContent = g.kind === "sliding" ? "⇄ Slides" : "⇄ Hinge";
+    $("gate-hinge").replaceChildren(icon("swap"), h("span", g.kind === "sliding" ? "Slides" : "Hinge"));
     $("gate-opens").hidden = g.kind === "opening";
-    $("gate-opens").textContent = g.kind === "sliding" ? "⇅ Track" : "⇅ Opens";
+    $("gate-opens").replaceChildren(icon("swapV"), h("span", g.kind === "sliding" ? "Track" : "Opens"));
     $("gate-gps").disabled = !gps;
     $("gate-gps").title = gps ? `${e.sel == null ? "Centre the gate" : "Put the post in hand"} at my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
     $("gate-undo").disabled = !e.stack.length;
@@ -684,7 +688,7 @@ const app = {
   refreshPointBar() {
     const e = this.mapApi?.point.edit(); if (!e) return;
     const gps = this.lastGps;
-    $("point-summary").textContent = `· ${e.at.toFixed(1)} m from A · ${e.fromB.toFixed(1)} m from B`;
+    inParts($("point-summary"), [`${e.at.toFixed(1)} m from A`, `${e.fromB.toFixed(1)} m from B`]);
     $("point-gps").disabled = !gps;
     $("point-gps").title = gps ? `Put it on the line nearest my GPS position (±${Math.round(gps.acc)} m)` : "turn on ◎ first";
     $("point-undo").disabled = !e.stack.length;
@@ -1039,7 +1043,7 @@ const app = {
     box.replaceChildren(...rows.filter(r => r.n || r.by === "You").map(r => h("label", h("input", { type: "checkbox", checked: !hidden.has(r.key),
       onchange: e => { const hs = new Set(this.settings.boardHidden ?? []); e.target.checked ? hs.delete(r.key) : hs.add(r.key); this.settings.boardHidden = [...hs]; this.saveSettings(); this.boardView.draw(); } }),
       h("span.ft-name", r.name, h("span.meta", `${r.by} · ${r.n} mark${r.n === 1 ? "" : "s"}`)))),
-      ...(rows.length ? [] : [h("div.sub.note", "Nothing sketched yet. ✎ on the map opens the whiteboard.")]));
+      ...(rows.length ? [] : [h("div.sub.note", h("span", "Nothing sketched yet. ", icon("board"), " on the map opens the whiteboard."))]));
   },
   async onMapClick(xy) {
     if (!this.pickMode) {

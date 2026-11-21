@@ -1,6 +1,6 @@
 // The feature sheet: what a tapped feature is, what has happened to it, and the actions.
 // Also the searchable list of every feature, and the way back to anything not yet placed.
-import { h, clear, fmtWhen, toast } from "./dom.js";
+import { h, clear, fmtWhen, toast, icon } from "./dom.js";
 import { observeForm, photoForm, jobForm, waterForm, editForm, fenceTypeForm, liveFeatures, typeTitle } from "./forms.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, catOf, catLook, lineTypeOf, isLine, typeCat, colourOf, iconSvg } from "../categories.js";
@@ -43,11 +43,11 @@ export function renderFeature(app, f) {
   }
   const timeline = h("ul.timeline", ...events.slice(0, 40).map(e => {
     const it = e.item;
-    const text = e.kind === "observe" ? `${it.kind !== "note" ? `[${it.kind}] ` : ""}${it.text}${it.photos?.length ? ` 📷${it.photos.length}` : ""}`
-      : e.kind === "photo" ? `📷 ${it.caption || "photo"}`
-      : e.kind === "water" ? `💧 ${it.value} ${it.unit}${it.note ? " · " + it.note : ""}`
-      : e.kind === "job" ? `☐ job: ${it.title}${it.due ? ` (due ${it.due})` : ""}`
-      : e.kind === "job.done" ? `☑ done: ${it.title}` : "";
+    const text = e.kind === "observe" ? [`${it.kind !== "note" ? `[${it.kind}] ` : ""}${it.text}`, ...(it.photos?.length ? [" ", icon("photos"), it.photos.length] : [])]
+      : e.kind === "photo" ? [icon("photos"), ` ${it.caption || "photo"}`]
+      : e.kind === "water" ? [icon("water"), ` ${it.value} ${it.unit}${it.note ? " · " + it.note : ""}`]
+      : e.kind === "job" ? [icon("box"), ` job: ${it.title}${it.due ? ` (due ${it.due})` : ""}`]
+      : e.kind === "job.done" ? [icon("jobs"), ` done: ${it.title}`] : "";
     return h("li", h("time", `${fmtWhen(e.ts)} · ${it.by ?? ""}`), text);
   }));
   // a fence's gates, and for a gate, its fence; a line's points, and for a point, its line
@@ -61,43 +61,43 @@ export function renderFeature(app, f) {
   const counts = { photos: photoItems.length, notes: events.filter(e => e.kind === "observe").length, jobs: events.filter(e => e.kind === "job").length, readings: events.filter(e => e.kind === "water").length, gates: gates.length, "points on it": points.length };
   const attached = Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing";
 
-  const actions = f.deleted ? h("div.actions", h("button.primary", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast("restored"); app.openSheet(app.state.features.get(f.id)); } }, "↩ Restore"))
+  const actions = f.deleted ? h("div.actions", h("button.primary", { onclick: async () => { await app.record({ op: "feature.undelete", feature: f.id }); toast("restored"); app.openSheet(app.state.features.get(f.id)); } }, icon("undo"), "Restore"))
     : h("div", h("div.actions",
-        h("button.primary", { onclick: () => app.showForm(observeForm(app, f)) }, "✎ Note"),
-        h("button", { onclick: () => app.showForm(photoForm(app, f)) }, "📷 Photo"),
-        h("button", { onclick: () => app.showForm(jobForm(app, f)) }, "☑ Job"),
-        f.type === "water" && !f.on ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, "💧 Reading") : h("button", { onclick: () => edit() }, "✎ Edit")),
+        h("button.primary", { onclick: () => app.showForm(observeForm(app, f)) }, icon("edit"), "Note"),
+        h("button", { onclick: () => app.showForm(photoForm(app, f)) }, icon("photos"), "Photo"),
+        h("button", { onclick: () => app.showForm(jobForm(app, f)) }, icon("jobs"), "Job"),
+        f.type === "water" && !f.on ? h("button", { onclick: () => app.showForm(waterForm(app, f)) }, icon("water"), "Reading") : h("button", { onclick: () => edit() }, icon("edit"), "Edit")),
       h("div.actions",
-        f.planned && !f.retired && h("button.primary", { onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: false } }); toast(`${f.name} marked as built`); } }, "✓ Built"),
-        f.type === "water" && !f.on && h("button", { onclick: () => edit() }, "✎ Edit"),
-        !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, "📍 Place on map"),
-        f.geom?.type === "Point" && !f.on && h("button", { onclick: () => app.startMove(f) }, "⤧ Move"),
-        f.on && !isRow(f.on) && onLine && h("button", { title: "Move it along its line", onclick: () => app.startPoint(line, f) }, "⤧ Move"),
-        f.gate && fence?.geom?.type === "LineString" && !f.hiddenWith && h("button", { title: "Move the gate, change its width, kind or swing", onclick: () => app.startGate(fence, f) }, "⤧ Move"),
-        !f.gate && !f.on && !f.area && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, "⤧ Shape"),
-        face && !f.retired && h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face, f) }, "÷ Divide"),
-        isFence && !f.retired && h("button", { onclick: () => app.startGate(f) }, "＋ Gate"),
-        aLine && !f.retired && h("button", { title: "One point on the line: a hatch, a valve, a strainer post", onclick: () => app.startPoint(f) }, "＋ Point"),
-        aLine && !f.retired && h("button", { title: "A row of points along the line: posts every 3 m, hatches every 30 m", onclick: () => app.editRow(f) }, "＋ Row"),
+        f.planned && !f.retired && h("button.primary", { onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: false } }); toast(`${f.name} marked as built`); } }, icon("check"), "Built"),
+        f.type === "water" && !f.on && h("button", { onclick: () => edit() }, icon("edit"), "Edit"),
+        !f.geom && h("button.primary", { onclick: () => app.startMove(f) }, icon("pin"), "Place on map"),
+        f.geom?.type === "Point" && !f.on && h("button", { onclick: () => app.startMove(f) }, icon("move"), "Move"),
+        f.on && !isRow(f.on) && onLine && h("button", { title: "Move it along its line", onclick: () => app.startPoint(line, f) }, icon("move"), "Move"),
+        f.gate && fence?.geom?.type === "LineString" && !f.hiddenWith && h("button", { title: "Move the gate, change its width, kind or swing", onclick: () => app.startGate(fence, f) }, icon("move"), "Move"),
+        !f.gate && !f.on && !f.area && f.geom && f.geom.type !== "Point" && h("button", { onclick: () => app.startShape(f) }, icon("move"), "Shape"),
+        face && !f.retired && h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face, f) }, icon("divide"), "Divide"),
+        isFence && !f.retired && h("button", { onclick: () => app.startGate(f) }, icon("plus"), "Gate"),
+        aLine && !f.retired && h("button", { title: "One point on the line: a hatch, a valve, a strainer post", onclick: () => app.startPoint(f) }, icon("plus"), "Point"),
+        aLine && !f.retired && h("button", { title: "A row of points along the line: posts every 3 m, hatches every 30 m", onclick: () => app.editRow(f) }, icon("plus"), "Row"),
         // the way back from ✓ Built: a fence drawn as if it stood that is really still an idea
-        !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, "◌ Planned"),
-        f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, "↩ Unretire")
-          : h("button", { onclick: async () => { const note = prompt(`Retire ${f.name}? It stays in the history with its ${attached}, but leaves the map. Add a note:`); if (note !== null) { await app.record({ op: "feature.retire", feature: f.id, note }); app.closeSheet(); toast(`${f.name} retired`); } } }, "⏏ Retire"),
-        h("button", { style: { color: "var(--danger)" }, onclick: () => app.deleteFeature(f, attached) }, "🗑 Delete")));
+        !f.planned && f.geom && !f.retired && h("button", { title: "Mark as planned, not built yet", onclick: async () => { await app.record({ op: "feature.edit", feature: f.id, changes: { planned: true } }); toast(`${f.name} marked as planned`); } }, icon("planned"), "Planned"),
+        f.retired ? h("button", { onclick: async () => { await app.record({ op: "feature.unretire", feature: f.id }); app.openSheet(app.state.features.get(f.id)); } }, icon("undo"), "Unretire")
+          : h("button", { onclick: async () => { const note = prompt(`Retire ${f.name}? It stays in the history with its ${attached}, but leaves the map. Add a note:`); if (note !== null) { await app.record({ op: "feature.retire", feature: f.id, note }); app.closeSheet(); toast(`${f.name} retired`); } } }, icon("retire"), "Retire"),
+        h("button", { style: { color: "var(--danger)" }, onclick: () => app.deleteFeature(f, attached) }, icon("trash"), "Delete")));
 
   function edit() { f.on && isRow(f.on) && onLine ? app.editRow(line, f) : app.showForm(editForm(app, f)); }
 
   body.append(...[
     app._fromList && h("button.back", { onclick: () => app.backToList() }, "‹ Back to list"),
     h("h2", { style: { display: "flex", alignItems: "center", gap: "8px" } }, ico(catLook(f, app.state.fencetypes)), f.name), chips,
-    f.geom?.type === "Point" && app.gridAt(f.geom.xy) && h("p.note.grid-at", `📐 ${app.gridAt(f.geom.xy)}`),
+    f.geom?.type === "Point" && app.gridAt(f.geom.xy) && h("p.note.grid-at", icon("measure"), ` ${app.gridAt(f.geom.xy)}`),
     // where a gate stands on its fence, in tape-measure terms, with the way to the fence
-    fence?.geom?.type === "LineString" && h("p.note.gate-at", `📐 ${f.gate.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(fence.geom.xy) - f.gate.at - f.gate.width).toFixed(1)} m from B, on`,
+    fence?.geom?.type === "LineString" && h("p.note.gate-at", icon("measure"), ` ${f.gate.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(fence.geom.xy) - f.gate.at - f.gate.width).toFixed(1)} m from B, on`,
       h("button.linkish", { onclick: () => app.goTo(fence.id) }, fence.name)),
     // where a point stands on its line, or how a row is spread along it
-    onLine && !isRow(f.on) && h("p.note.gate-at", `📐 ${f.on.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(line.geom.xy) - f.on.at).toFixed(1)} m from B, on`,
+    onLine && !isRow(f.on) && h("p.note.gate-at", icon("measure"), ` ${f.on.at.toFixed(1)} m from A · ${Math.max(0, lengthOf(line.geom.xy) - f.on.at).toFixed(1)} m from B, on`,
       h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
-    onLine && isRow(f.on) && h("p.note.gate-at", `📐 ${rowNote(rowSummary(line.geom.xy, f.on, app.cutsOn(line.id)))} · ${f.on.spacing === "exact" ? "exactly" : "no more than"} ${f.on.every} m apart along`,
+    onLine && isRow(f.on) && h("p.note.gate-at", icon("measure"), ` ${rowNote(rowSummary(line.geom.xy, f.on, app.cutsOn(line.id)))} · ${f.on.spacing === "exact" ? "exactly" : "no more than"} ${f.on.every} m apart along`,
       h("button.linkish", { onclick: () => app.goTo(line.id) }, line.name)),
     face && fencesRound(app, face),
     !face && f.area && app.areas(true).gaps.length ? h("p.note", `Open ends near it: ${app.areas(true).gaps.filter(g => g.d <= 10).slice(0, 3).map(g => app.gapText(g)).join("; ")}.`) : null,
@@ -166,7 +166,7 @@ function fencesRound(app, face) {
   // a fence traced half a metre out either way moves the edge by that much all round
   const plus = Math.max(1, Math.round(face.perimeter * 0.5 / 10) * 10);
   return h("div.area-about",
-    h("p.note.round", `📐 ${fmtLength(face.perimeter)} round, inside `, ...fs.flatMap((f, k) => [k ? (k === fs.length - 1 ? " and " : ", ") : "", h("button.linkish", { onclick: () => app.goTo(f.id) }, f.name)])),
+    h("p.note.round", icon("measure"), ` ${fmtLength(face.perimeter)} round, inside `, ...fs.flatMap((f, k) => [k ? (k === fs.length - 1 ? " and " : ", ") : "", h("button.linkish", { onclick: () => app.goTo(f.id) }, f.name)])),
     h("p.note", `Good to about ±${fmtArea(plus)}: the fences are traced to about half a metre.${face.holes.length ? ` Less ${face.holes.length} fenced-off patch${face.holes.length === 1 ? "" : "es"} inside.` : ""}`));
 }
 
@@ -179,7 +179,7 @@ export function areaCard(app, face, at) {
     fencesRound(app, face),
     h("p.note", "Tap it again to name it."),
     h("div.actions",
-      h("button.primary", { onclick: () => app.nameArea(face, at) }, "✎ Name it"),
-      h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face) }, "÷ Divide"),
+      h("button.primary", { onclick: () => app.nameArea(face, at) }, icon("edit"), "Name it"),
+      h("button", { title: "Split it into equal parts with planned fences", onclick: () => app.startDivide(face) }, icon("divide"), "Divide"),
       h("button", { onclick: () => app.closeSheet() }, "Close")));
 }

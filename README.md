@@ -26,6 +26,16 @@ that you point the app at from Settings; this repo is only the app.
   is drawn in its type's colour, and Layers has the key, with each type's fence count and length
   and a switch to show it alone
 
+## Design
+
+The look (0.3.8, "Noir Data") came out of the Design Pipeline project,
+`Coding/Design Pipeline/projects/plot-logbook/`, which keeps every round and why each was picked:
+Noir Data, then the Floating layout, then the Signal details, then tuned by hand.
+[PRODUCT.md](PRODUCT.md) says who the app is for and what it must do; [DESIGN.md](DESIGN.md) records
+the design system as shipped, for future changes. The redesign lives in `css/design.css` (loaded
+after `css/app.css`), the IBM Plex fonts in `fonts/`, and the drawn icons in `js/ui/dom.js`; the
+app behaves exactly as before.
+
 ## Data repo layout
 
 ```

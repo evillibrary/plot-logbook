@@ -1,5 +1,5 @@
 // The Jobs, Water and Photos tabs.
-import { h, clear, fmtWhen, today } from "./dom.js";
+import { h, clear, fmtWhen, today, icon } from "./dom.js";
 import { jobForm, waterForm, photoForm, observeForm } from "./forms.js";
 import * as photos from "../photos.js";
 
@@ -15,11 +15,11 @@ export function renderJobs(app) {
   const row = j => h("div.card.job" + (j.due && j.due < t && !j.done ? ".overdue" : ""),
     h("input", { type: "checkbox", checked: !!j.done, onchange: async ev => { if (ev.target.checked) await app.record({ op: "job.done", job: j.id }); else await app.record({ op: "job.edit", job: j.id, changes: { done: null } }); } }),
     h("div", { style: { flex: 1 } },
-      h("div", j.title, j.repeat ? h("span.chip", { style: { marginLeft: "6px" } }, "↻") : null),
+      h("div", j.title, j.repeat ? h("span.chip", { style: { marginLeft: "6px" }, title: "Repeats", "aria-label": "Repeats" }, icon("repeat")) : null),
       h("div.due", [j.due ? `due ${j.due}` : "no date", j.feature ? ` · ${fname(app, j.feature)}` : "", j.history.length ? ` · done ${j.history.length}×` : ""].join("")),
       j.notes && h("div.note", j.notes)),
-    j.feature && h("button.btn", { onclick: () => app.goTo(j.feature) }, "📍"),
-    h("button.btn", { onclick: () => app.showForm(jobForm(app, null, j), el) }, "✎"));
+    j.feature && h("button.btn", { title: "On map", "aria-label": "On map", onclick: () => app.goTo(j.feature) }, icon("pin")),
+    h("button.btn", { title: "Edit", "aria-label": "Edit", onclick: () => app.showForm(jobForm(app, null, j), el) }, icon("edit")));
   el.append(h("h1", "Jobs"), h("div.row", h("button.btn.primary", { onclick: () => app.showForm(jobForm(app, null), el) }, "+ New job")));
   let any = false;
   for (const [title, list] of groups) if (list.length) { any = true; el.append(h("h3", title), ...list.map(row)); }
@@ -40,7 +40,7 @@ export function renderWater(app) {
     const delta = prev && latest.unit === "m3" ? ` (+${(latest.value - prev.value).toFixed(2)} since ${(prev.at ?? prev.ts).slice(0, 10)})` : "";
     const total = latest.unit === "mm" ? ` · ${list.reduce((a, r) => a + r.value, 0).toFixed(0)} mm logged` : "";
     el.append(h("div.card", h("h3", title(latest)), h("div", `${latest.value} ${latest.unit}${delta}${total}`), h("div.note", `${fmtWhen(latest.at ?? latest.ts)} · ${latest.by}${latest.note ? " · " + latest.note : ""}`),
-      latest.feature && h("button.btn", { style: { marginTop: "6px" }, onclick: () => app.goTo(latest.feature) }, "📍 On map"), sparkline(list.slice(0, 30).reverse())));
+      latest.feature && h("button.btn", { style: { marginTop: "6px" }, onclick: () => app.goTo(latest.feature) }, icon("pin"), "On map"), sparkline(list.slice(0, 30).reverse())));
   }
   if (!rows.length) el.append(h("p.empty", "No readings yet. Tap a water feature on the map and press Reading, or + Reading here."));
   else el.append(h("h3", "All readings"), h("ul.timeline", ...rows.slice(0, 50).map(r => h("li", h("time", `${(r.at ?? r.ts).slice(0, 16).replace("T", " ")} · ${r.by}`), `${title(r)}: ${r.value} ${r.unit} ${r.note ?? ""}`))));
@@ -76,7 +76,7 @@ export function renderPhotos(app) {
     if (!list.length) grid.append(h("p.empty", { style: { gridColumn: "1 / -1" } }, "No photos yet."));
   };
   filter.addEventListener("change", draw);
-  el.append(h("h1", "Photos"), h("div.row", h("button.btn.primary", { onclick: () => app.showForm(photoForm(app, null), el) }, "📷 Add"), filter), grid);
+  el.append(h("h1", "Photos"), h("div.row", h("button.btn.primary", { onclick: () => app.showForm(photoForm(app, null), el) }, icon("photos"), "Add"), filter), grid);
   draw();
 }
 
@@ -89,8 +89,8 @@ export function photoViewer(app, p) {
     h("p.note", `${(p.taken ?? p.ts).replace("T", " ")} · ${p.by ?? ""}${p.feature ? " · " + fname(app, p.feature) : ""}${p.gps ? ` · GPS ${p.gps[0].toFixed(5)}, ${p.gps[1].toFixed(5)}` : ""}`),
     img,
     h("div.row", { style: { marginTop: "10px" } },
-      p.feature && h("button.btn", { onclick: () => app.goTo(p.feature) }, "📍 On map"),
-      h("button.btn", { onclick: () => { const c = prompt("Caption:", p.caption ?? ""); if (c !== null) app.record({ op: "photo.edit", photo: p.photo, changes: { caption: c } }).then(() => app.closeSheet()); } }, "✎ Caption"),
+      p.feature && h("button.btn", { onclick: () => app.goTo(p.feature) }, icon("pin"), "On map"),
+      h("button.btn", { onclick: () => { const c = prompt("Caption:", p.caption ?? ""); if (c !== null) app.record({ op: "photo.edit", photo: p.photo, changes: { caption: c } }).then(() => app.closeSheet()); } }, icon("edit"), "Caption"),
       h("button.btn", { onclick: () => { const sel = h("select", ...[...app.state.features.values()].filter(f => !f.deleted).sort((a, b) => a.name.localeCompare(b.name)).map(f => h("option", { value: f.id, selected: f.id === p.feature }, f.name))); app.showForm(h("form", { onsubmit: async e => { e.preventDefault(); await app.record({ op: "photo.edit", photo: p.photo, changes: { feature: sel.value } }); app.closeSheet(); } }, h("h2", "Link photo to"), sel, h("div.row", h("button.btn.primary", { type: "submit" }, "Link")))); } }, p.feature ? "Re-link" : "Link to feature"),
       h("button.btn", { onclick: () => app.closeSheet() }, "Close")));
 }

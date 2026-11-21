@@ -1,10 +1,12 @@
 // Offline shell. Cache-first for the app's own files; everything else (the data source) goes to the network.
-const VERSION = "plot-logbook-v0.3.7";
-const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css",
+const VERSION = "plot-logbook-v0.3.8";
+const SHELL = ["./", "index.html", "manifest.json", "css/app.css", "css/design.css", "vendor/leaflet/leaflet.js", "vendor/leaflet/leaflet.css",
   "vendor/leaflet/images/layers.png", "vendor/leaflet/images/layers-2x.png", "vendor/leaflet/images/marker-icon.png",
   "vendor/leaflet/images/marker-icon-2x.png", "vendor/leaflet/images/marker-shadow.png", "vendor/exifr.js", "vendor/fflate.js",
   "js/app.js", "js/db.js", "js/source.js", "js/proj.js", "js/map.js", "js/tiles.js", "js/events.js", "js/photos.js", "js/categories.js", "js/geo.js", "js/grid.js", "js/shape.js", "js/gate.js", "js/points.js", "js/board.js", "js/areas.js",
-  "js/ui/dom.js", "js/ui/forms.js", "js/ui/sheet.js", "js/ui/views.js", "js/ui/more.js", "icons/icon-192.png", "icons/icon-512.png"];
+  "js/ui/dom.js", "js/ui/forms.js", "js/ui/sheet.js", "js/ui/views.js", "js/ui/more.js", "icons/icon-192.png", "icons/icon-512.png",
+  "fonts/ibm-plex-sans-latin.woff2", "fonts/ibm-plex-sans-latin-ext.woff2", "fonts/ibm-plex-sans-700-latin.woff2", "fonts/ibm-plex-sans-700-latin-ext.woff2",
+  "fonts/ibm-plex-mono-500-latin.woff2", "fonts/ibm-plex-mono-500-latin-ext.woff2"];
 
 self.addEventListener("install", e => {
   // cache: "reload" is load-bearing. Pages serves the shell with max-age=600, so a plain

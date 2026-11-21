@@ -1,5 +1,5 @@
 // The logging forms. Each returns an element; on save it calls app.record(...) and app.done(form).
-import { h, field, today, toast } from "./dom.js";
+import { h, field, today, toast, icon } from "./dom.js";
 import * as photos from "../photos.js";
 import { CATEGORIES, CAT, FENCE_COLOURS, colourOf, typeCat } from "../categories.js";
 import { describeGeom, fmtArea } from "../geo.js";
@@ -30,7 +30,7 @@ function photoPicker(app) {
     }
     input.value = "";
   });
-  const el = h("div", h("div.row", h("button.btn", { type: "button", onclick: () => { input.removeAttribute("capture"); input.click(); } }, "📷 Add photos"), h("span.note", "camera or gallery")), strip, input);
+  const el = h("div", h("div.row", h("button.btn", { type: "button", onclick: () => { input.removeAttribute("capture"); input.click(); } }, icon("photos"), "Add photos"), h("span.note", "camera or gallery")), strip, input);
   return { el, list: () => list };
 }
 
@@ -165,7 +165,7 @@ function typePicker(app, type, value, { keep = false } = {}) {
     if (own && typeCat(own) !== cat && !keep) cur = null;
     caption.textContent = cat === "fences" ? "Fence type" : "Type of line";
     name.placeholder = cat === "fences" ? "e.g. Stock fence 1.2 m" : cat === "water" ? "e.g. 110 mm sewer pipe" : "e.g. Garden hedge";
-    chips = [chip(null, "No type"), ...sortedTypes(app).filter(t => typeCat(t) === cat || t.id === cur).map(t => chip(t.id, t.name, colourOf(t.colour).color)), chip("new", "＋ New type")];
+    chips = [chip(null, "No type"), ...sortedTypes(app).filter(t => typeCat(t) === cat || t.id === cur).map(t => chip(t.id, t.name, colourOf(t.colour).color)), chip("new", [icon("plus"), "New type"])];
     box.replaceChildren(...chips);
     pick(cur);
   };

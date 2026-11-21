@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2f7d4f">
+<meta name="theme-color" content="#16171b">
 <title>Plot Logbook</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/design.css">
 </head>
 <body>
 <div id="app">
@@ -19,25 +20,25 @@
       <div class="map-top">
         <button class="pill" id="sync-pill" title="Sync status"><span class="dot" id="sync-dot"></span><span id="sync-text">offline</span></button>
         <span class="spacer"></span>
-        <button class="pill icon" id="btn-list" title="Find a feature" aria-label="Find a feature"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/></svg></button>
-        <button class="pill icon" id="btn-locate" title="Where am I">◎</button>
-        <button class="pill icon" id="btn-board" title="Whiteboard: sketch over the map" aria-label="Whiteboard" aria-pressed="false"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"><path d="M4 20l1.2-4.6L15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14 6.6l3.4 3.4"/><path d="M13 21h7"/></svg></button>
-        <button class="pill icon" id="btn-layers" title="Layers">≡</button>
+        <button class="pill icon" id="btn-list" title="Find a feature" aria-label="Find a feature"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.3"/><path d="m15.3 15.3 5.2 5.2"/></svg></button>
+        <button class="pill icon" id="btn-locate" title="Where am I" aria-label="Where am I"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.3"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/><path d="M12 2.6v3.1M12 18.3v3.1M2.6 12h3.1M18.3 12h3.1"/></svg></button>
+        <button class="pill icon" id="btn-board" title="Whiteboard: sketch over the map" aria-label="Whiteboard" aria-pressed="false"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.5 5.6 15 15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L9 18.4z"/><path d="m14 6.6 3.4 3.4"/><path d="M13.5 20.5h6.5"/></svg></button>
+        <button class="pill icon" id="btn-layers" title="Layers" aria-label="Layers"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.8 8.3 4.4-8.3 4.4-8.3-4.4z"/><path d="m3.7 12.2 8.3 4.4 8.3-4.4"/><path d="m3.7 16 8.3 4.4 8.3-4.4"/></svg></button>
       </div>
       <div class="draw-bar" id="pick-bar" hidden>
-        <div class="draw-info"><button class="snap" aria-pressed="false" hidden>⊞ Snap</button><strong id="pick-title">Tap the map</strong></div>
+        <div class="draw-info"><button class="snap" aria-pressed="false" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v16M4 12h16"/></svg>Snap</button><strong id="pick-title">Tap the map</strong></div>
         <div class="row"><button class="btn" id="pick-cancel">Cancel</button></div>
       </div>
       <div class="draw-bar" id="shape-bar" hidden>
-        <div class="draw-info"><button class="snap" aria-pressed="false" hidden>⊞ Snap</button><strong id="shape-title">Shaping</strong> <span id="shape-summary"></span></div>
+        <div class="draw-info"><button class="snap" aria-pressed="false" hidden><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M12 4v16M4 12h16"/></svg>Snap</button><strong id="shape-title">Shaping</strong> <span class="parts" id="shape-summary"></span></div>
         <div class="row">
-          <button class="btn" id="shape-gps" title="Add a point, or put the selected one, at my GPS position">◎ Here</button>
+          <button class="btn" id="shape-gps" title="Add a point, or put the selected one, at my GPS position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.3"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/><path d="M12 2.6v3.1M12 18.3v3.1M2.6 12h3.1M18.3 12h3.1"/></svg><span>Here</span></button>
           <button class="btn" id="shape-length" title="Set the length of the side that ends at the selected point">Length…</button>
-          <button class="btn" id="shape-remove">✕ Remove</button>
-          <button class="btn" id="shape-swap" title="Swap which end is A">⇄ A/B</button>
+          <button class="btn" id="shape-remove"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></svg><span>Remove</span></button>
+          <button class="btn" id="shape-swap" title="Swap which end is A"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 8.5h14.5M15.5 5l3.5 3.5-3.5 3.5"/><path d="M19.5 15.5H5M8.5 12 5 15.5 8.5 19"/></svg><span>A/B</span></button>
         </div>
         <div class="row">
-          <button class="btn" id="shape-undo">↶ Undo</button>
+          <button class="btn" id="shape-undo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg><span>Undo</span></button>
           <button class="btn" id="shape-restart" title="Take every point away and draw it afresh (↶ Undo brings them back)">Start again</button>
           <button class="btn primary" id="shape-save">Save</button>
           <button class="btn" id="shape-cancel">Cancel</button>
@@ -45,34 +46,34 @@
         <div class="note" id="shape-note"></div>
       </div>
       <div class="draw-bar" id="gate-bar" hidden>
-        <div class="draw-info"><strong id="gate-title">Gate</strong> <span id="gate-summary"></span></div>
+        <div class="draw-info"><strong id="gate-title">Gate</strong> <span class="parts" id="gate-summary"></span></div>
         <div class="row">
           <select id="gate-kind" title="What closes the gateway"></select>
           <select id="gate-width" title="Width, post to post"></select>
-          <button class="btn" id="gate-gps" title="Centre the gate, or put the post in hand, at my GPS position">◎ Here</button>
+          <button class="btn" id="gate-gps" title="Centre the gate, or put the post in hand, at my GPS position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.3"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/><path d="M12 2.6v3.1M12 18.3v3.1M2.6 12h3.1M18.3 12h3.1"/></svg><span>Here</span></button>
         </div>
         <div class="row">
           <button class="btn" id="gate-from-a" title="Tape from end A to the nearer post">From A…</button>
           <button class="btn" id="gate-from-b" title="Tape from end B to the nearer post">From B…</button>
-          <button class="btn" id="gate-hinge" title="Which post the gate hangs on">⇄ Hinge</button>
-          <button class="btn" id="gate-opens" title="Which side it swings to">⇅ Opens</button>
+          <button class="btn" id="gate-hinge" title="Which post the gate hangs on"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 8.5h14.5M15.5 5l3.5 3.5-3.5 3.5"/><path d="M19.5 15.5H5M8.5 12 5 15.5 8.5 19"/></svg><span>Hinge</span></button>
+          <button class="btn" id="gate-opens" title="Which side it swings to"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 19.5V5M5 8.5 8.5 5 12 8.5"/><path d="M15.5 4.5v14.5M12 15.5l3.5 3.5 3.5-3.5"/></svg><span>Opens</span></button>
         </div>
         <div class="row">
-          <button class="btn" id="gate-undo">↶ Undo</button>
+          <button class="btn" id="gate-undo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg><span>Undo</span></button>
           <button class="btn primary" id="gate-save">Save</button>
           <button class="btn" id="gate-cancel">Cancel</button>
         </div>
         <div class="note" id="gate-note"></div>
       </div>
       <div class="draw-bar" id="point-bar" hidden>
-        <div class="draw-info"><strong id="point-title">Point</strong> <span id="point-summary"></span></div>
+        <div class="draw-info"><strong id="point-title">Point</strong> <span class="parts" id="point-summary"></span></div>
         <div class="row">
-          <button class="btn" id="point-gps" title="Put the point on the line nearest my GPS position">◎ Here</button>
+          <button class="btn" id="point-gps" title="Put the point on the line nearest my GPS position"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.3"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none"/><path d="M12 2.6v3.1M12 18.3v3.1M2.6 12h3.1M18.3 12h3.1"/></svg><span>Here</span></button>
           <button class="btn" id="point-from-a" title="Tape from end A to the point">From A…</button>
           <button class="btn" id="point-from-b" title="Tape from end B to the point">From B…</button>
         </div>
         <div class="row">
-          <button class="btn" id="point-undo">↶ Undo</button>
+          <button class="btn" id="point-undo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg><span>Undo</span></button>
           <button class="btn primary" id="point-save">Save</button>
           <button class="btn" id="point-cancel">Cancel</button>
         </div>
@@ -97,8 +98,8 @@
         <div class="bd-colours" id="bd-colours"><select id="bd-track" title="How wide the track is on the ground" hidden></select></div>
         <div class="row">
           <select id="bd-sheet" title="Which sketch you are drawing on"></select>
-          <button class="btn" id="bd-undo" title="Undo">↶</button>
-          <button class="btn" id="bd-redo" title="Redo">↷</button>
+          <button class="btn" id="bd-undo" title="Undo" aria-label="Undo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3"/></svg></button>
+          <button class="btn" id="bd-redo" title="Redo" aria-label="Redo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 4.5-4.5L15 5"/><path d="M19.5 9.5H10a5.5 5.5 0 0 0 0 11h3"/></svg></button>
           <button class="btn" id="bd-clear" title="Clear this sheet">Clear</button>
           <button class="btn primary" id="bd-done">Done</button>
         </div>
@@ -106,7 +107,7 @@
       </div>
       <div class="map-bottom">
         <div class="jobs-strip" id="jobs-strip" hidden></div>
-        <button class="fab" id="btn-add" title="Log something here">+</button>
+        <button class="fab" id="btn-add" title="Log something here" aria-label="Log something here"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
     </section>
     <section class="view" data-view="jobs" hidden><div id="jobs-view"></div></section>
@@ -159,11 +160,11 @@
       </div>
   </main>
   <nav class="tabs">
-    <button data-tab="map" class="active"><span class="ico">🗺</span>Map</button>
-    <button data-tab="jobs"><span class="ico">☑</span>Jobs</button>
-    <button data-tab="water"><span class="ico">💧</span>Water</button>
-    <button data-tab="photos"><span class="ico">📷</span>Photos</button>
-    <button data-tab="more"><span class="ico">⋯</span>More</button>
+    <button data-tab="map" class="active"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5 3.5 6.8v12.7L9 17.2l6 2.3 5.5-2.3V4.5L15 6.8z"/><path d="M9 4.5v12.7M15 6.8v12.7"/></svg></span>Map</button>
+    <button data-tab="jobs"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3.5"/><path d="m8.4 12.3 2.5 2.5 4.8-5.3"/></svg></span>Jobs</button>
+    <button data-tab="water"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6c3.3 4 5.6 7.1 5.6 10.2a5.6 5.6 0 0 1-11.2 0c0-3.1 2.3-6.2 5.6-10.2z"/><path d="M9.4 14.6a2.8 2.8 0 0 0 2.4 2.5"/></svg></span>Water</button>
+    <button data-tab="photos"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.8 8.6A1.6 1.6 0 0 1 5.4 7h2.4l1.6-2.3h5.2L16.2 7h2.4a1.6 1.6 0 0 1 1.6 1.6v8.8a1.6 1.6 0 0 1-1.6 1.6H5.4a1.6 1.6 0 0 1-1.6-1.6z"/><circle cx="12" cy="12.6" r="3.3"/></svg></span>Photos</button>
+    <button data-tab="more"><span class="ico"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.7" fill="currentColor" stroke="none"/></svg></span>More</button>
   </nav>
 </div>
 <script src="vendor/leaflet/leaflet.js"></script>

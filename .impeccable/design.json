@@ -1,0 +1,720 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T21:34:27.037Z",
+  "title": "Design System: Plot Logbook",
+  "extensions": {
+    "provenance": {
+      "seed": "none",
+      "pickedOn": "21 November 2026",
+      "run": "Design Pipeline/projects/plot-logbook/",
+      "picks": [
+        "Round 1: Noir Data. Near-black map chrome in both themes, hairlines, sand accent, mono for measurements; IBM Plex Sans and Mono.",
+        "Round 2: Floating. Every piece of chrome a dark tile over the map, which runs to all four edges; floating tab bar, map buttons in a rail down the right, sheets and the drawing bar as cards; the PC side panel floats.",
+        "Round 3: Signal. Sand marks what is live: the active tab, the open sheet's grip and PC outline, the drawing bar's frame; heavier icon strokes, a bigger sheet title.",
+        "Round 4: tuned values. 12px corners, 52px map buttons, 61px add button, separate map buttons, 54px tab bar with smaller labels, .5px tile edges and no tile shadows, 1.65rem sheet title, icon stroke 2.4, 21px phone sheet padding and 5px inset, 390px PC panel.",
+        "Finish review fixes, then shipped in Plot Logbook as 0.3.8."
+      ]
+    },
+    "colorMeta": {
+      "chrome": {
+        "role": "neutral",
+        "displayName": "Tile Black",
+        "canonical": "#16171b",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232427",
+          "#3e3f44",
+          "#5c5d62",
+          "#7c7d82",
+          "#9d9ea3",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "chrome-raised": {
+        "role": "neutral",
+        "displayName": "Tile Raised",
+        "canonical": "#24262b",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222428",
+          "#3e4045",
+          "#5b5d63",
+          "#7b7d83",
+          "#9c9ea4",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "chrome-ink": {
+        "role": "neutral",
+        "displayName": "Tile Ink",
+        "canonical": "#f2f2ea",
+        "tonalRamp": [
+          "#0b0b09",
+          "#242420",
+          "#40403a",
+          "#5e5e57",
+          "#7e7e77",
+          "#9f9f99",
+          "#c4c4c0",
+          "#eeeeed"
+        ]
+      },
+      "chrome-muted": {
+        "role": "neutral",
+        "displayName": "Tile Grey",
+        "canonical": "#b3b4ad",
+        "tonalRamp": [
+          "#0b0b09",
+          "#242420",
+          "#40403b",
+          "#5d5e58",
+          "#7d7e78",
+          "#9e9f99",
+          "#c4c4c0",
+          "#eeeeed"
+        ]
+      },
+      "chrome-edge": {
+        "role": "neutral",
+        "displayName": "Tile Edge",
+        "canonical": "#5a5c62",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232428",
+          "#3e4045",
+          "#5b5d63",
+          "#7b7d83",
+          "#9c9ea4",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "panel-edge": {
+        "role": "neutral",
+        "displayName": "Panel Edge",
+        "canonical": "#34363c",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#222428",
+          "#3e4045",
+          "#5b5d64",
+          "#7b7d84",
+          "#9c9ea4",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "signal": {
+        "role": "primary",
+        "displayName": "Signal Sand",
+        "canonical": "#d8c597",
+        "tonalRamp": [
+          "#110a00",
+          "#2e2203",
+          "#4d3e16",
+          "#6d5c31",
+          "#8d7b51",
+          "#ac9d78",
+          "#cec3a9",
+          "#f2eee5"
+        ]
+      },
+      "sand": {
+        "role": "primary",
+        "displayName": "Sheet Sand",
+        "canonical": "#c9b58a",
+        "tonalRamp": [
+          "#110a00",
+          "#2e2204",
+          "#4d3d18",
+          "#6d5b33",
+          "#8d7b53",
+          "#ad9d7a",
+          "#cfc3aa",
+          "#f2eee6"
+        ]
+      },
+      "sand-text": {
+        "role": "primary",
+        "displayName": "Sand Text",
+        "canonical": "#6b5729",
+        "tonalRamp": [
+          "#120a00",
+          "#2f2200",
+          "#4f3d11",
+          "#6f5b2d",
+          "#8f7b4e",
+          "#ae9c75",
+          "#d0c3a7",
+          "#f2eee5"
+        ]
+      },
+      "night-sand-text": {
+        "role": "primary",
+        "displayName": "Sand Text (night)",
+        "canonical": "#dccb9f",
+        "tonalRamp": [
+          "#100a00",
+          "#2d2305",
+          "#4c3e19",
+          "#6b5c34",
+          "#8b7c54",
+          "#ab9d7a",
+          "#cdc4aa",
+          "#f1eee6"
+        ]
+      },
+      "page": {
+        "role": "neutral",
+        "displayName": "Page",
+        "canonical": "#eceeee",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#232424",
+          "#3f4040",
+          "#5c5e5e",
+          "#7c7e7e",
+          "#9d9f9f",
+          "#c3c4c4",
+          "#eeeeee"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "#f8f9f9",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#3f4040",
+          "#5d5e5e",
+          "#7c7d7d",
+          "#9e9e9e",
+          "#c3c4c4",
+          "#eeeeee"
+        ]
+      },
+      "panel-raised": {
+        "role": "neutral",
+        "displayName": "Panel Raised",
+        "canonical": "#e3e6e7",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232425",
+          "#3e4041",
+          "#5b5e5f",
+          "#7b7e7f",
+          "#9c9fa0",
+          "#c3c4c5",
+          "#eeeeef"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#7d7d7d",
+          "#9e9e9e",
+          "#c4c4c4",
+          "#eeeeee"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#15161a",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232427",
+          "#3e3f44",
+          "#5c5d62",
+          "#7c7d82",
+          "#9d9ea3",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted",
+        "canonical": "#44474d",
+        "tonalRamp": [
+          "#0a0b0e",
+          "#222428",
+          "#3d4045",
+          "#5a5e64",
+          "#7a7d84",
+          "#9b9ea4",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#d2d6d8",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#222426",
+          "#3d4042",
+          "#5b5e60",
+          "#7a7e80",
+          "#9c9fa0",
+          "#c2c4c6",
+          "#eeeeef"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Line Strong",
+        "canonical": "#8b8a84",
+        "tonalRamp": [
+          "#0c0b09",
+          "#252420",
+          "#41403b",
+          "#5f5e58",
+          "#7e7d78",
+          "#9f9e99",
+          "#c5c4c0",
+          "#efeeed"
+        ]
+      },
+      "night-page": {
+        "role": "neutral",
+        "displayName": "Page (night)",
+        "canonical": "#0f1013",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232426",
+          "#3e4043",
+          "#5c5d61",
+          "#7c7d81",
+          "#9d9ea2",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "night-panel": {
+        "role": "neutral",
+        "displayName": "Panel (night)",
+        "canonical": "#17181c",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232427",
+          "#3e3f44",
+          "#5c5d62",
+          "#7c7d82",
+          "#9d9ea3",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "night-panel-raised": {
+        "role": "neutral",
+        "displayName": "Panel Raised (night)",
+        "canonical": "#212328",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222428",
+          "#3e4045",
+          "#5b5d63",
+          "#7b7d83",
+          "#9c9ea4",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "night-field": {
+        "role": "neutral",
+        "displayName": "Field (night)",
+        "canonical": "#111216",
+        "tonalRamp": [
+          "#0b0b0d",
+          "#232427",
+          "#3e3f44",
+          "#5c5d62",
+          "#7c7d82",
+          "#9d9ea3",
+          "#c3c4c7",
+          "#eeeeef"
+        ]
+      },
+      "night-muted": {
+        "role": "neutral",
+        "displayName": "Muted (night)",
+        "canonical": "#abaca5",
+        "tonalRamp": [
+          "#0b0b09",
+          "#242420",
+          "#40403b",
+          "#5d5e58",
+          "#7d7e77",
+          "#9e9f99",
+          "#c4c4c0",
+          "#eeeeed"
+        ]
+      },
+      "night-line": {
+        "role": "neutral",
+        "displayName": "Line (night)",
+        "canonical": "#2b2d32",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222428",
+          "#3e4045",
+          "#5b5d63",
+          "#7b7d83",
+          "#9c9ea3",
+          "#c2c4c8",
+          "#eeeef0"
+        ]
+      },
+      "ok": {
+        "role": "status",
+        "displayName": "OK",
+        "canonical": "#2f8f55",
+        "tonalRamp": [
+          "#001201",
+          "#003009",
+          "#00501e",
+          "#007139",
+          "#379259",
+          "#67b27f",
+          "#a0d3ae",
+          "#e3f3e7"
+        ]
+      },
+      "warn": {
+        "role": "status",
+        "displayName": "Warn",
+        "canonical": "#b5730f",
+        "tonalRamp": [
+          "#1b0400",
+          "#411500",
+          "#672f00",
+          "#8b4c00",
+          "#ac6d0c",
+          "#ca914e",
+          "#e5bc8e",
+          "#faecdd"
+        ]
+      },
+      "danger": {
+        "role": "status",
+        "displayName": "Danger",
+        "canonical": "#b4302a",
+        "tonalRamp": [
+          "#250000",
+          "#530000",
+          "#7f0001",
+          "#a82420",
+          "#cd4d43",
+          "#ea786c",
+          "#ffaba0",
+          "#ffe7e3"
+        ]
+      },
+      "night-ok": {
+        "role": "status",
+        "displayName": "OK (night and tiles)",
+        "canonical": "#5cc685",
+        "tonalRamp": [
+          "#001200",
+          "#003107",
+          "#00511d",
+          "#007338",
+          "#279458",
+          "#5fb37e",
+          "#9bd4ad",
+          "#e2f4e7"
+        ]
+      },
+      "night-warn": {
+        "role": "status",
+        "displayName": "Warn (night and tiles)",
+        "canonical": "#e9a649",
+        "tonalRamp": [
+          "#1b0400",
+          "#401600",
+          "#663000",
+          "#8a4d00",
+          "#ab6e00",
+          "#c99249",
+          "#e4bc8b",
+          "#f9ecdc"
+        ]
+      },
+      "night-danger": {
+        "role": "status",
+        "displayName": "Danger (night and tiles)",
+        "canonical": "#ff7d72",
+        "tonalRamp": [
+          "#240000",
+          "#500000",
+          "#7c010b",
+          "#a52a27",
+          "#c95149",
+          "#e67b71",
+          "#fcada3",
+          "#ffe7e4"
+        ]
+      },
+      "gps": {
+        "role": "status",
+        "displayName": "GPS Blue",
+        "canonical": "#1a73e8",
+        "tonalRamp": [
+          "#000333",
+          "#00176a",
+          "#00349c",
+          "#0055c8",
+          "#2679ea",
+          "#599eff",
+          "#95c6ff",
+          "#dff0ff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Sheet and view titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "The drawing bar's title, in signal sand."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base text, tabular figures."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Buttons."
+      },
+      "control-cell": {
+        "displayName": "Control cell",
+        "purpose": "Drawing-bar cells, icon over word."
+      },
+      "tab": {
+        "displayName": "Tab",
+        "purpose": "Uppercase tab labels; 600 and sand when active."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Mono caps names of collapsible groups."
+      },
+      "status": {
+        "displayName": "Status",
+        "purpose": "The sync pill."
+      },
+      "readout": {
+        "displayName": "Readout",
+        "purpose": "The drawing bar's live summary, in parts."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Dates, due dates, counts, chips."
+      }
+    },
+    "shadows": [
+      {
+        "name": "sheet",
+        "value": "0 -4px 20px rgb(0 0 0 / .22)",
+        "purpose": "Phone sheets; .6 in dark theme."
+      },
+      {
+        "name": "side-panel",
+        "value": "-6px 0 24px rgb(0 0 0 / .14)",
+        "purpose": "The PC side panel."
+      },
+      {
+        "name": "toast",
+        "value": "0 4px 16px rgb(0 0 0 / .16)",
+        "purpose": "The toast; .5 in dark theme."
+      },
+      {
+        "name": "primary-ledge",
+        "value": "inset 0 -3px 0 rgb(0 0 0 / .16)",
+        "purpose": "Inner bottom edge on sand primary buttons in sheets and views; kept as picked after the finish review."
+      }
+    ],
+    "focus": [
+      {
+        "name": "focus-ring",
+        "value": "outline:3px solid #d8c597;outline-offset:2px",
+        "purpose": "Every focusable control."
+      }
+    ],
+    "motion": [
+      {
+        "name": "sheet-slide",
+        "value": "transform .2s ease",
+        "purpose": "Sheets sliding in and out."
+      },
+      {
+        "name": "grip",
+        "value": "background .15s, width .15s",
+        "purpose": "The grip widening while dragged."
+      },
+      {
+        "name": "chevron",
+        "value": "transform .15s",
+        "purpose": "Group disclosure triangles."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "pc",
+        "value": "900px",
+        "purpose": "Below: inset card sheets, full-width drawing bars. From 900px: the 390px dark side panel, a centred 620px tab bar, a 520px drawing bar."
+      }
+    ],
+    "icons": {
+      "source": "js/ui/dom.js ICON (the same paths written into index.html)",
+      "grid": "24",
+      "stroke": "currentColor at 2.4, round caps and joins",
+      "sizes": "22px default; 24 tabs; 28 add button; 18 buttons and drawing bars; 16 Snap; 14 chips; 1.15em inline in notes"
+    }
+  },
+  "components": [
+    {
+      "name": "Map Button",
+      "kind": "button",
+      "refersTo": "map-button",
+      "description": "A 52px near-black tile over the map; sand when switched on.",
+      "html": "<div class=\"ds-map\"><button class=\"ds-map-btn\" aria-label=\"Layers\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m12 3.8 8.3 4.4-8.3 4.4-8.3-4.4z\"/><path d=\"m3.7 12.2 8.3 4.4 8.3-4.4\"/><path d=\"m3.7 16 8.3 4.4 8.3-4.4\"/></svg></button><button class=\"ds-map-btn on\" aria-label=\"Whiteboard\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M4.5 19.5 5.6 15 15.6 5a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L9 18.4z\"/><path d=\"m14 6.6 3.4 3.4\"/><path d=\"M13.5 20.5h6.5\"/></svg></button></div>",
+      "css": ".ds-map{display:flex;gap:8px;padding:12px;background:#6d7a4f} .ds-map-btn{width:52px;height:52px;display:grid;place-items:center;background:#16171b;color:#f2f2ea;border:.5px solid #5a5c62;border-radius:12px;cursor:pointer} .ds-map-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round} .ds-map-btn.on{background:#d8c597;color:#16171b;border-color:#d8c597;box-shadow:inset 0 0 0 2px #16171b} .ds-map-btn:focus-visible{outline:3px solid #d8c597;outline-offset:2px}"
+    },
+    {
+      "name": "Sync Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Sync status top left: a status dot and mono caps.",
+      "html": "<div class=\"ds-map2\"><span class=\"ds-pill\"><i></i>Synced</span></div>",
+      "css": ".ds-map2{padding:12px;background:#6d7a4f} .ds-pill{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;background:#16171b;color:#f2f2ea;border:.5px solid #5a5c62;border-radius:12px;font:500 .8rem 'IBM Plex Mono',ui-monospace,monospace;text-transform:uppercase;letter-spacing:.06em} .ds-pill i{width:10px;height:10px;border-radius:50%;background:#5cc685;box-shadow:0 0 0 2px #16171b}"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-bar",
+      "description": "The floating near-black tab bar; the active tab in sand with a 3px top bar.",
+      "html": "<nav class=\"ds-tabs\"><button class=\"on\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 4.5 3.5 6.8v12.7L9 17.2l6 2.3 5.5-2.3V4.5L15 6.8z\"/><path d=\"M9 4.5v12.7M15 6.8v12.7\"/></svg>Map</button><button><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"3.5\"/><path d=\"m8.4 12.3 2.5 2.5 4.8-5.3\"/></svg>Jobs</button><button><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3.6c3.3 4 5.6 7.1 5.6 10.2a5.6 5.6 0 0 1-11.2 0c0-3.1 2.3-6.2 5.6-10.2z\"/><path d=\"M9.4 14.6a2.8 2.8 0 0 0 2.4 2.5\"/></svg>Water</button></nav>",
+      "css": ".ds-tabs{display:flex;height:54px;padding:0 4px;background:#16171b;border:.5px solid #5a5c62;border-radius:14px;max-width:360px} .ds-tabs button{flex:1;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:0;color:#b3b4ad;font:500 .6875rem 'IBM Plex Sans',sans-serif;text-transform:uppercase;letter-spacing:.08em;cursor:pointer} .ds-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round} .ds-tabs button.on{color:#d8c597;font-weight:600} .ds-tabs button.on::before{content:'';position:absolute;top:0;left:14%;right:14%;height:3px;border-radius:0 0 2px 2px;background:#d8c597} .ds-tabs button:focus-visible{outline:3px solid #d8c597;outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sand fill with a 3px inner ledge; the one primary action in a group.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary{min-height:44px;padding:0 16px;background:var(--accent,#c9b58a);color:#15161a;border:1px solid var(--accent,#c9b58a);border-radius:12px;font:600 15px 'IBM Plex Sans',sans-serif;box-shadow:inset 0 -3px 0 rgb(0 0 0 / .16);cursor:pointer} .ds-btn-primary:focus-visible{outline:3px solid #d8c597;outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Transparent with a hairline border that darkens on hover; danger is red text.",
+      "html": "<button class=\"ds-btn\">Cancel</button> <button class=\"ds-btn ds-danger\">Delete</button>",
+      "css": ".ds-btn{min-height:44px;padding:0 16px;background:transparent;color:var(--ink,#15161a);border:1px solid var(--line,#d2d6d8);border-radius:12px;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer} .ds-btn:hover{border-color:var(--line-strong,#8b8a84)} .ds-btn:focus-visible{outline:3px solid #d8c597;outline-offset:2px} .ds-danger{color:var(--danger,#b4302a)}"
+    },
+    {
+      "name": "Drawing Bar",
+      "kind": "custom",
+      "refersTo": "draw-bar",
+      "description": "The signature control surface: a near-black card framed in sand, a readout in parts, equal cells with icon over word.",
+      "html": "<div class=\"ds-draw\"><div class=\"ds-info\"><strong>Shaping</strong><span class=\"ds-parts\"><span>120.0 m</span><span>4 points</span></span></div><div class=\"ds-cells\"><button><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 14 4.5 9.5 9 5\"/><path d=\"M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3\"/></svg>Undo</button><button><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6.5 6.5 11 11M17.5 6.5l-11 11\"/></svg>Remove</button><button class=\"p\">Save</button><button>Cancel</button></div></div>",
+      "css": ".ds-draw{max-width:360px;padding:12px;background:#16171b;color:#f2f2ea;border:1.5px solid #d8c597;border-radius:12px;font-family:'IBM Plex Sans',sans-serif} .ds-info{display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;margin-bottom:8px} .ds-info strong{color:#d8c597;font-weight:600;letter-spacing:.01em} .ds-parts{display:inline-flex;flex-wrap:wrap;column-gap:.5em;font:500 .8rem 'IBM Plex Mono',ui-monospace,monospace} .ds-parts>span:not(:last-child)::after{content:' ·'} .ds-cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px} .ds-cells button{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:transparent;color:#f2f2ea;border:1.5px solid #45474d;border-radius:12px;font:500 .8rem/1.15 'IBM Plex Sans',sans-serif;cursor:pointer} .ds-cells button:hover{background:#24262b} .ds-cells button.p{background:#d8c597;border-color:#d8c597;color:#16171b;font-weight:600} .ds-cells svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round} .ds-cells button:focus-visible{outline:3px solid #d8c597;outline-offset:2px}"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Mono chip at 4px corners; planned is dashed and unfilled.",
+      "html": "<span class=\"ds-chip\">200 m</span> <span class=\"ds-chip ds-plan\">planned</span>",
+      "css": ".ds-chip{display:inline-block;padding:3px 10px;background:var(--panel-2,#e3e6e7);color:var(--ink,#15161a);border-radius:4px;font:600 .72rem 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.03em} .ds-plan{background:none;border:1.5px dashed var(--line-strong,#8b8a84)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Field with its caption above, 44px, 12px corners.",
+      "html": "<label class=\"ds-field\"><span>Name</span><input placeholder=\"What it is\"></label>",
+      "css": ".ds-field{display:block;max-width:320px;font-family:'IBM Plex Sans',sans-serif} .ds-field span{display:block;margin-bottom:4px;color:var(--muted,#44474d);font-size:.8rem;font-weight:500} .ds-field input{width:100%;min-height:44px;padding:10px 12px;background:var(--field,#fff);color:var(--ink,#15161a);border:1px solid var(--line,#d2d6d8);border-radius:12px;font:inherit;caret-color:#c9b58a} .ds-field input:focus-visible{outline:3px solid #d8c597;outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Noir Data",
+    "overview": "The plot's map fills the screen to all four edges, and every control floats over it as a near-black tile: the sync status top left, the map buttons in a rail down the right, the add button bottom right, the tab bar along the bottom, and the drawing bar above it while you draw. The tiles are the same near-black in light and dark themes, so over both the drawn plan and the photo imagery the plot itself (its fills, its fence colours, the photo) is the brightest and most colourful thing on screen.\n\nOne colour does the signalling. Sand marks whatever is live: the active tab and its top bar, a map button that is switched on, the drawing bar's frame while you draw, the open sheet's grip, a chosen tool or fence type, and the one primary action in a group. Everything else on the tiles is off-white ink, quiet grey and thin edges. Measurements, status and group names are set in IBM Plex Mono; everything people read is IBM Plex Sans.\n\nSheets and list views (Jobs, Water, Photos, More) are the one part that follows the theme: cool near-white panels in light, near-black panels in dark, hairline rows, no boxes. On a phone a sheet is an inset card that never takes more than two thirds of the screen; on a PC it is a 390px side panel that is dark in both themes and outlined in sand. It is a field tool used in full sun: every control is at least 44px, and the system leans on contrast rather than decoration.\n\nSeed: none. The world was picked in the Design Pipeline run (`Design Pipeline/projects/plot-logbook/`) on 21 November 2026: Noir Data, then the Floating layout, then the Signal details, then tuned values and a finish review, shipped as 0.3.8.",
+    "keyCharacteristics": [
+      "The map runs edge to edge; all chrome floats over it as near-black tiles, the same in both themes.",
+      "Sand is the one signal colour, for what is live and the primary action; it never decorates.",
+      "IBM Plex Sans for words, IBM Plex Mono for numbers, status and group names; tabular figures everywhere.",
+      "12px corners on tiles, sheets and controls; 14px on the tab bar, the add button and the PC panel.",
+      "Every control at least 44px; the drawing bar's buttons are equal cells, 48px tall, icon over word.",
+      "Drawn line icons on a 24-unit grid, stroked in the text colour at 2.4.",
+      "The plan's colours are data, not palette."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Rule",
+        "body": "Sand means \"live\" or \"do this\". Use it for the current state (active tab, a button that is on, the bar you are drawing in, the open sheet) and for the one primary action in a group, and nowhere else. Never as a decorative fill, border or background.",
+        "section": "colors"
+      },
+      {
+        "name": "The Same Tiles Rule",
+        "body": "What floats over the map is near-black in both themes. The tiles re-point the shared tokens (`--panel`, `--ink`, `--line`, `--accent` and the status colours) inside themselves; a new floating control gets the dark look by sitting inside `.map-top`, `.map-bottom`, `.draw-bar`, `nav.tabs` or the Leaflet controls, not by new colours.",
+        "section": "colors"
+      },
+      {
+        "name": "The Plot Leads Rule",
+        "body": "The chrome never uses a hue the plan uses for meaning. Fence and area colours are the user's data; nothing in the interface competes with them.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measured Mono Rule",
+        "body": "Numbers that are measurements, counts, dates or status go in Plex Mono; words people read go in Plex Sans. Uppercase appears only in the mono labels and status and in the tab labels.",
+        "section": "typography"
+      },
+      {
+        "name": "The Readout in Parts Rule",
+        "body": "A multi-part readout is written as separate pieces with the separator at the end of each piece, so a wrapped line never starts with a dot.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Tile Rule",
+        "body": "Nothing floating over the map gets a drop shadow. A tile is separated from the map by being near-black with a thin edge.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do float every control over the map as a `chrome` tile with a thin `chrome-edge` outline, the same in both themes.",
+      "Do keep sand for what is live and for the one primary action in a group.",
+      "Do set measurements, counts, dates and status in IBM Plex Mono, and everything read in IBM Plex Sans.",
+      "Do keep every control at least 44px; drawing-bar cells 48px; map buttons 52px.",
+      "Do use 12px corners on tiles, sheets, buttons and fields, and 14px on the tab bar, the add button and the PC panel.",
+      "Do keep 10px between the chrome and the screen edges, and between the tab bar and what floats above it.",
+      "Do cap a phone sheet at about two thirds of the screen, inset 5px, above the tab bar.",
+      "Do put a drawn icon from `ICON` beside a button's word, never in place of it unless the button has an `aria-label`.",
+      "Do write multi-part readouts in parts, separator at the end of each part.",
+      "Do use the dark-theme status colours on anything dark, in both themes."
+    ],
+    "donts": [
+      "Don't give the tiles over the map a drop shadow.",
+      "Don't use sand as decoration, a background wash or a border on something that is not live.",
+      "Don't introduce a colour the plan uses for meaning; fence, area and category colours are data.",
+      "Don't theme the map's own colours or labels; only their fonts belong to the design.",
+      "Don't let the chrome follow the theme: only sheets and list views do.",
+      "Don't set body text in the mono, or uppercase anything outside the mono labels, the status pill and the tab labels.",
+      "Don't load fonts or icons from the internet; the app must work with no signal.",
+      "Don't add a second accent colour."
+    ]
+  }
+}

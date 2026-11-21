@@ -21,7 +21,7 @@ test("the service worker's cache version matches the app version", () => {
 test("every file the app loads is in the shell, and every shell entry exists", () => {
   const walk = dir => fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
     .flatMap(d => d.isDirectory() ? walk(`${dir}/${d.name}`) : [`${dir}/${d.name}`]);
-  const shipped = [...["js", "css", "vendor", "icons"].flatMap(walk), "index.html", "manifest.json"]
+  const shipped = [...["js", "css", "fonts", "vendor", "icons"].flatMap(walk), "index.html", "manifest.json"]
     .filter(f => !/(^|\/)(Thumbs\.db|\.DS_Store)$/.test(f));
   const missing = shipped.filter(f => !SHELL.includes(f));
   assert.deepEqual(missing, [], "add these to SHELL in sw.js");

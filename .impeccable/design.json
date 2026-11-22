@@ -549,8 +549,8 @@
     "focus": [
       {
         "name": "focus-ring",
-        "value": "outline:3px solid #d8c597;outline-offset:2px",
-        "purpose": "Every focusable control."
+        "value": "outline:3px solid var(--focus);outline-offset:2px",
+        "purpose": "Every focusable control. --focus is #d8c597 on the tiles, the PC panel and in dark theme, #6b5729 on light sheets and views."
       }
     ],
     "motion": [
@@ -639,7 +639,7 @@
       "refersTo": "chip",
       "description": "Mono chip at 4px corners; planned is dashed and unfilled.",
       "html": "<span class=\"ds-chip\">200 m</span> <span class=\"ds-chip ds-plan\">planned</span>",
-      "css": ".ds-chip{display:inline-block;padding:3px 10px;background:var(--panel-2,#e3e6e7);color:var(--ink,#15161a);border-radius:4px;font:600 .72rem 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.03em} .ds-plan{background:none;border:1.5px dashed var(--line-strong,#8b8a84)}"
+      "css": ".ds-chip{display:inline-block;padding:3px 10px;background:var(--panel-2,#e3e6e7);color:var(--ink,#15161a);border-radius:4px;font:500 .72rem 'IBM Plex Mono',ui-monospace,monospace;letter-spacing:.03em} .ds-plan{background:none;border:1.5px dashed var(--line-strong,#8b8a84)}"
     },
     {
       "name": "Text Field",

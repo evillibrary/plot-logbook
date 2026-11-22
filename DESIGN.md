@@ -227,9 +227,9 @@ Seed: none. The world was picked in the Design Pipeline run (`Design Pipeline/pr
 A near-black instrument palette over the map, one sand signal, and theme-following neutrals for the sheets and list views.
 
 ### Primary
-- **Signal Sand** (`signal`): the live colour on every dark surface. The active tab's label, icon and 3px top bar; the whiteboard button while it is on; the drawing bar's frame and its title; a chosen whiteboard tool's outline; the sheet grip in dark theme; the PC side panel's outline; the add button's fill; primary buttons on the tiles and in dark theme; the focus ring everywhere.
+- **Signal Sand** (`signal`): the live colour on every dark surface. The active tab's label, icon and 3px top bar; the whiteboard button while it is on; the drawing bar's frame and its title; a chosen whiteboard tool's outline; the sheet grip in dark theme; the PC side panel's outline; the add button's fill; primary buttons on the tiles and in dark theme; the focus ring on every dark surface.
 - **Sheet Sand** (`sand`): the same role on light sheets and views, a shade deeper so the fill holds on near-white. Primary buttons, the grip, a chosen fence type, selected text. Text on any sand fill is `ink` (or `chrome` on the tiles).
-- **Sand Text** (`sand-text`, night `night-sand-text`): sand as text and as small controls on panels: the "Back to …" links, link-style buttons, and the sliders and checkboxes inside sheets (light sand is too pale for a thumb on near-white).
+- **Sand Text** (`sand-text`, night `night-sand-text`): sand as text and as small controls on panels: the "Back to …" links, link-style buttons, the sliders and checkboxes inside sheets (light sand is too pale for a thumb on near-white), and the focus ring on light sheets and views.
 
 ### Neutral
 - **Tile Black** (`chrome`): every tile over the map, the PC side panel, `theme-color` and the manifest `theme_color`. Its raised part (`chrome-raised`) fills pressed snap buttons and whiteboard tools.
@@ -330,10 +330,10 @@ Near-black, outlined, quiet until they are live.
 - **Secondary:** transparent with a 1px `line` border and `ink` text; the border darkens to `line-strong` on hover. **Danger** is a secondary button with `danger` text.
 - **Action buttons (feature sheet):** a four-column grid of 52px buttons, icon over word, transparent with a 1.5px `line-strong` border, weight 500. The one the sheet marks primary (Note, on a feature) is the sand primary.
 - **Link-style:** `sand-text`, at least 32px tall; the "Back to …" button is `sand-text` at 600.
-- **Focus:** a 3px `signal` outline offset 2px, everywhere. On the tiles and dark surfaces it reads well; on light sheets and views it measures about 1.6:1 against the panel, under the 3:1 a focus ring needs. That is a known gap in 0.3.8, not a value to copy onto new light surfaces.
+- **Focus:** a 3px outline offset 2px in the `--focus` colour: `signal` on the tiles, the PC panel and in dark theme (over 10:1), `sand-text` on light sheets and views (about 6.5:1). A new surface that changes the theme sets `--focus` along with its other tokens.
 
 ### Chips
-- **Style:** `panel-raised` fill, mono .72rem (asked for at 600, but only the 500 face is shipped, so the browser synthesises the bold), 4px corners, 3px 10px; 36px tall when a chip is a button. A category chip takes its category's data colour.
+- **Style:** `panel-raised` fill, mono 500 .72rem (the shipped face; nothing asks for a Mono weight that isn't shipped), 4px corners, 3px 10px; 36px tall when a chip is a button. A category chip takes its category's data colour.
 - **Confidence:** high, medium and low are `ok`, `warn` and `danger` tinted into the panel (18%, 20%, 16%) with the same hue mixed into the ink for text. **Planned** is an unfilled chip with a dashed 1.5px `line-strong` border.
 - **Fence-type chips:** 44px, `panel` with a `line` border; chosen, they fill sand.
 
@@ -346,7 +346,8 @@ Near-black, outlined, quiet until they are live.
 
 ### Inputs / Fields
 - **Style:** `field` fill, 1px `line` border, 12px corners, 10px 12px padding, at least 44px. Captions above in `muted`, .8rem at 500. Placeholders in `muted` mixed 85% into the panel.
-- **Focus:** the sand outline; the caret is the accent colour.
+- **Selects:** every select has the field look and is at least 44px; one zero-specificity rule (`:where(select)`) covers any that no other rule styles. `color-scheme` follows the surface (dark on the tiles, the PC panel and in dark theme), so the open list and date pickers match.
+- **Focus:** the focus ring above; the caret is the accent colour.
 - **Checkboxes, radios, sliders:** browser controls tinted with the accent (`sand-text` inside sheets), 20px; job ticks 24px.
 
 ### Drawing bar (signature)

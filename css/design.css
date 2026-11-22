@@ -45,6 +45,8 @@
   --ctl: 44px; --gap: 8px; --edge: 10px; --tab-h: 54px;
   --shadow: 0 4px 16px rgb(0 0 0 / .16); --sheet-shadow: 0 -4px 20px rgb(0 0 0 / .22);
   --ico: 2.4;
+  --focus: var(--accent-text);   /* the ring: dark bronze on the light sheets */
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0f1013; --panel: #17181c; --panel-2: #212328; --field: #111216;
@@ -52,8 +54,10 @@
   --accent: #d8c597; --accent-ink: #15161a; --accent-text: #dccb9f;
   --ok: #5cc685; --warn: #e9a649; --danger: #ff7d72;
   --shadow: 0 4px 16px rgb(0 0 0 / .5); --sheet-shadow: 0 -4px 20px rgb(0 0 0 / .6);
+  --focus: var(--accent); color-scheme: dark;
 } }
 :root[data-theme="dark"] {
+  --focus: var(--accent); color-scheme: dark;
   --bg: #0f1013; --panel: #17181c; --panel-2: #212328; --field: #111216;
   --ink: #f2f2ea; --muted: #abaca5; --line: #2b2d32; --line-strong: #5a5c62;
   --accent: #d8c597; --accent-ink: #15161a; --accent-text: #dccb9f;
@@ -66,6 +70,7 @@
   --line: color-mix(in srgb, var(--m-chrome-edge) 70%, var(--m-chrome)); --line-strong: var(--m-chrome-edge);
   --accent: var(--m-signal); --accent-ink: var(--m-chrome); --accent-text: var(--m-signal);
   --float: var(--m-chrome); --float-ink: var(--m-chrome-ink); --float-line: var(--m-chrome-edge); --float-shadow: none;
+  --focus: var(--m-signal); color-scheme: dark;
   --ok: #5cc685; --warn: #e9a649; --danger: #ff7d72;   /* status colours that read on the dark tiles in both themes */
 }
 
@@ -73,7 +78,7 @@
 body { font: 400 var(--fs)/1.45 var(--font); color: var(--ink); background: var(--bg); font-variant-numeric: tabular-nums; }
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; }
 input, textarea { caret-color: var(--accent); }
-:focus-visible { outline: 3px solid var(--m-signal); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 * { scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
 h1, h2, h3 { font-family: var(--font-display); }
 h1 { font-size: 1.65rem; font-weight: 700; margin: 6px 0 14px; letter-spacing: -.015em; }
@@ -184,7 +189,7 @@ input[type=range] { accent-color: var(--accent); }
 .layers .sub:has(+ .grp), .layers .grp > :last-child { border-bottom: 0; }
 
 .chips { gap: 6px; }
-.chip { background: var(--panel-2); color: var(--ink); font-family: var(--font-mono); font-size: .72rem; font-weight: 600; letter-spacing: .03em; padding: 3px 10px; border-radius: 4px; }
+.chip { background: var(--panel-2); color: var(--ink); font-family: var(--font-mono); font-size: .72rem; font-weight: 500; letter-spacing: .03em; padding: 3px 10px; border-radius: 4px; }
 button.chip { min-height: 36px; }
 .chip.hi { background: color-mix(in srgb, var(--ok) 18%, var(--panel)); color: color-mix(in srgb, var(--ok) 55%, var(--ink)); }
 .chip.md { background: color-mix(in srgb, var(--warn) 20%, var(--panel)); color: color-mix(in srgb, var(--warn) 50%, var(--ink)); }
@@ -247,7 +252,8 @@ details > summary { cursor: pointer; min-height: var(--ctl); display: flex; alig
     box-shadow: -6px 0 24px rgb(0 0 0 / .14); outline: 1.5px solid var(--m-signal); outline-offset: -1px;
     --panel: var(--m-chrome); --panel-2: var(--m-chrome-2); --field: color-mix(in srgb, var(--m-chrome) 80%, #000); --ink: var(--m-chrome-ink); --muted: var(--m-chrome-muted);
     --line: color-mix(in srgb, var(--m-chrome-edge) 30%, var(--m-chrome)); --line-strong: color-mix(in srgb, var(--m-chrome-edge) 90%, #fff);
-    --accent-text: #dccb9f; --ok: #5cc685; --warn: #e9a649; --danger: #ff7d72; background: var(--m-chrome); color: var(--m-chrome-ink); }
+    --accent-text: #dccb9f; --ok: #5cc685; --warn: #e9a649; --danger: #ff7d72; background: var(--m-chrome); color: var(--m-chrome-ink);
+    --focus: var(--m-signal); color-scheme: dark; }
   .draw-bar:not(.board-bar) { right: auto; width: 520px; }
   /* the side sheet doesn't cover the map buttons: they move left of it while it is open */
   main:has(.sheet.open) .map-top, main:has(.sheet.open) .map-bottom { right: calc(390px + 30px); }
@@ -273,3 +279,6 @@ details > summary { cursor: pointer; min-height: var(--ctl); display: flex; alig
 .parts { display: inline-flex; flex-wrap: wrap; column-gap: .5em; }
 .parts > span { white-space: nowrap; }
 .parts > span:not(:last-child)::after { content: " ·"; }
+/* any select no other rule styles (the Areas tolerance, the Photos filter): a 44 px field that follows the theme.
+   :where() keeps it at zero specificity, so every styled select still wins. */
+:where(select) { min-height: var(--ctl); padding: 0 10px; background: var(--field); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-ctl); }

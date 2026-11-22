@@ -19,7 +19,7 @@ import { PointEdit, refitPoint, onGeom, rowSummary, isRow } from "./points.js";
 import { buildFaces, faceAt, divideStrips, divideFan, sideDir, corners, nearestOn } from "./areas.js";
 import { BoardView, TOOLS, BOARD_COLOURS, TRACK_WIDTHS, loadBoards, saveMine, emptyBoard, pushBoard, pullBoards, strokeMark, markGeom, newId, measure, measureText } from "./board.js";
 
-const VERSION = "0.3.8";
+const VERSION = "0.3.9";
 const $ = id => document.getElementById(id);
 // a readout written as separate pieces ("200.0 m", "4 points"); css/design.css puts the dots between
 // them, so a wrapped line never starts with one
